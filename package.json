@@ -1,0 +1,29 @@
+{
+  "name": "ai-quiz-assistant",
+  "version": "1.0.0",
+  "description": "AI-powered browser extension for quiz assistance on learning platforms",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"No test specified\" && exit 0",
+    "lint": "echo \"No linter configured\" && exit 0",
+    "package": "echo \"To package: zip the extension folder (excluding node_modules, .git, etc.)\""
+  },
+  "keywords": [
+    "chrome-extension",
+    "edge-extension",
+    "quiz",
+    "ai",
+    "openai",
+    "gemini",
+    "education",
+    "learning"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "devDependencies": {},
+  "dependencies": {}
+}

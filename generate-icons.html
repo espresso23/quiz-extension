@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Icon Generator</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+      background: #f5f5f5;
+    }
+    canvas {
+      margin: 10px;
+      border: 1px solid #ddd;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      background: #4a90d9;
+      color: white;
+      border: none;
+      border-radius: 6px;
+    }
+    button:hover {
+      background: #357abd;
+    }
+    .info {
+      margin-top: 20px;
+      padding: 16px;
+      background: white;
+      border-radius: 8px;
+      max-width: 500px;
+    }
+  </style>
+</head>
+<body>
+  <h1>AI Quiz Assistant - Icon Generator</h1>
+  <p>Click the buttons below to download the required icon files</p>
+  
+  <div>
+    <canvas id="canvas16" width="16" height="16"></canvas>
+    <canvas id="canvas48" width="48" height="48"></canvas>
+    <canvas id="canvas128" width="128" height="128"></canvas>
+  </div>
+  
+  <div>
+    <button onclick="downloadIcon(16)">Download icon16.png</button>
+    <button onclick="downloadIcon(48)">Download icon48.png</button>
+    <button onclick="downloadIcon(128)">Download icon128.png</button>
+    <button onclick="downloadAll()">Download All</button>
+  </div>
+  
+  <div class="info">
+    <h3>Instructions:</h3>
+    <ol>
+      <li>Click each download button to save the PNG files</li>
+      <li>Move the downloaded files to the <code>icons/</code> folder</li>
+      <li>Reload the extension in chrome://extensions/</li>
+    </ol>
+  </div>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      
+      // Create gradient background
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#4a90d9');
+      gradient.addColorStop(1, '#6c5ce7');
+      
+      // Draw rounded rectangle background
+      const radius = size * 0.2;
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(size - radius, 0);
+      ctx.quadraticCurveTo(size, 0, size, radius);
+      ctx.lineTo(size, size - radius);
+      ctx.quadraticCurveTo(size, size, size - radius, size);
+      ctx.lineTo(radius, size);
+      ctx.quadraticCurveTo(0, size, 0, size - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw "AI" text
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.55}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('AI', size / 2, size / 2);
+    }
+    
+    function downloadIcon(size) {
+      const canvas = document.getElementById(`canvas${size}`);
+      drawIcon(canvas, size);
+      
+      const link = document.createElement('a');
+      link.download = `icon${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+    
+    function downloadAll() {
+      setTimeout(() => downloadIcon(16), 100);
+      setTimeout(() => downloadIcon(48), 300);
+      setTimeout(() => downloadIcon(128), 500);
+    }
+    
+    // Draw preview on load
+    drawIcon(document.getElementById('canvas16'), 16);
+    drawIcon(document.getElementById('canvas48'), 48);
+    drawIcon(document.getElementById('canvas128'), 128);
+  </script>
+</body>
+</html>

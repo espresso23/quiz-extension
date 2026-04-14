@@ -1,0 +1,1 @@
+// Placeholder SVG icons - will be created as PNG later

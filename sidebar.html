@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Quiz Assistant - Sidebar</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <div class="sidebar-container">
+    <header class="sidebar-header">
+      <h2>🤖 AI Quiz Assistant</h2>
+      <button id="settingsBtn" class="btn-icon" title="Settings">⚙️</button>
+    </header>
+
+    <main class="sidebar-content">
+      <div class="status-section" id="statusSection">
+        <p class="status-text">Navigate to a quiz page and click the AI Solve button, or paste a question below.</p>
+      </div>
+
+      <div class="manual-input" id="manualInput">
+        <h3>Manual Question Input</h3>
+        <textarea id="questionInput" placeholder="Paste your question here..." rows="3"></textarea>
+        
+        <div class="options-input">
+          <p>Options (one per line):</p>
+          <textarea id="optionsInput" placeholder="Option A&#10;Option B&#10;Option C&#10;Option D" rows="4"></textarea>
+        </div>
+        
+        <button id="manualSolveBtn" class="btn-primary">Get Answer</button>
+      </div>
+
+      <div class="result-section" id="resultSection" style="display:none;">
+        <div class="question-display">
+          <h4>Question:</h4>
+          <p id="displayQuestion"></p>
+        </div>
+
+        <div class="options-display" id="displayOptions"></div>
+
+        <div class="answer-display">
+          <h4>✅ Answer:</h4>
+          <p class="answer-text" id="displayAnswer"></p>
+        </div>
+
+        <div class="explanation-display" id="explanationSection">
+          <h4>📖 Explanation:</h4>
+          <p id="displayExplanation"></p>
+        </div>
+      </div>
+
+      <div class="loading-section" id="loadingSection" style="display:none;">
+        <div class="spinner"></div>
+        <p>Asking AI for help...</p>
+      </div>
+
+      <div class="error-section" id="errorSection" style="display:none;">
+        <p class="error-message" id="errorMessage"></p>
+        <button id="retryBtn" class="btn-secondary">Retry</button>
+      </div>
+    </main>
+
+    <footer class="sidebar-footer">
+      <p class="disclaimer">⚠️ For educational use only. Verify answers independently.</p>
+    </footer>
+  </div>
+
+  <script src="sidebar.js"></script>
+</body>
+</html>
