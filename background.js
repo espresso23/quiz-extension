@@ -52,33 +52,24 @@ function createContextMenus() {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'ai-solve-selection' && info.selectionText) {
-    // Solve selected text
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: (selection) => {
-        chrome.runtime.sendMessage({
-          action: 'solveQuiz',
-          question: selection,
-          options: [],
-          questionType: 'short_answer'
-        });
-      },
-      args: [info.selectionText]
+    // Send selected text to content script
+    chrome.tabs.sendMessage(tab.id, {
+      action: 'solveQuiz',
+      question: info.selectionText,
+      options: [],
+      questionType: 'short_answer'
     });
   }
-  
+
   if (info.menuItemId === 'ai-solve-page') {
-    // Send message to content script to solve
     chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' });
   }
-  
+
   if (info.menuItemId === 'ai-toggle-ui') {
-    // Toggle UI visibility
     chrome.tabs.sendMessage(tab.id, { action: 'toggleUI' });
   }
-  
+
   if (info.menuItemId === 'ai-hide-all') {
-    // Hide all UI
     chrome.tabs.sendMessage(tab.id, { action: 'hideAllUI' });
   }
 });
