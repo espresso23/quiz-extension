@@ -33,9 +33,16 @@ const Stealth = (function() {
   function createShadowContainer(parent) {
     const container = document.createElement('div');
     container.setAttribute('data-react-component', 'QuizContainer');
-    container.style.position = 'absolute';
-    container.style.pointerEvents = 'none';
-    container.style.visibility = 'hidden';
+    // Keep host mounted and visible so children in shadow DOM can render.
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.left = '0';
+    container.style.width = '0';
+    container.style.height = '0';
+    container.style.overflow = 'visible';
+    container.style.zIndex = '999997';
+    container.style.pointerEvents = 'auto';
+    container.style.visibility = 'visible';
     parent.appendChild(container);
     const shadow = container.attachShadow({ mode: 'closed' });
     return { container, shadow };
@@ -255,8 +262,8 @@ const Stealth = (function() {
         toggleSidebar();
       }
       
-      // Ctrl+Shift+L or Cmd+Shift+L - Solve current question (stealth)
-      if (e.ctrlKey && e.shiftKey && e.key === 'L') {
+      // Ctrl+Shift+Y or Cmd+Shift+Y - Solve current question (stealth)
+      if (e.ctrlKey && e.shiftKey && e.key === 'Y') {
         e.preventDefault();
         console.log('[AI Translator] Solve shortcut pressed');
         solveCurrentQuestion();
@@ -477,9 +484,6 @@ const Stealth = (function() {
     if (fabButton) {
       Stealth.stealthHide(fabButton);
     }
-    
-    // Clean any traces
-    Stealth.cleanTraces();
   }
   
   /**

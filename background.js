@@ -49,11 +49,32 @@ function createContextMenus() {
   });
 }
 
+/**
+ * Safely send a message to a tab without throwing uncaught promise errors.
+ */
+async function sendMessageToTabSafe(tabId, message) {
+  if (!tabId) return false;
+
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+    return true;
+  } catch (error) {
+    // Happens on restricted pages or when content script is not available.
+    if (error && error.message && error.message.includes('Receiving end does not exist')) {
+      console.debug('[AI Translator] No content script receiver in tab:', tabId);
+      return false;
+    }
+
+    console.warn('[AI Translator] Failed to send tab message:', error);
+    return false;
+  }
+}
+
 // Handle context menu clicks
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'ai-solve-selection' && info.selectionText) {
     // Send selected text to content script
-    chrome.tabs.sendMessage(tab.id, {
+    await sendMessageToTabSafe(tab?.id, {
       action: 'solveQuiz',
       question: info.selectionText,
       options: [],
@@ -62,15 +83,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 
   if (info.menuItemId === 'ai-solve-page') {
-    chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' });
+    await sendMessageToTabSafe(tab?.id, { action: 'solveQuestion' });
   }
 
   if (info.menuItemId === 'ai-toggle-ui') {
-    chrome.tabs.sendMessage(tab.id, { action: 'toggleUI' });
+    await sendMessageToTabSafe(tab?.id, { action: 'toggleUI' });
   }
 
   if (info.menuItemId === 'ai-hide-all') {
-    chrome.tabs.sendMessage(tab.id, { action: 'hideAllUI' });
+    await sendMessageToTabSafe(tab?.id, { action: 'hideAllUI' });
   }
 });
 
@@ -99,8 +120,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Handle keyboard shortcuts
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands.onCommand.addListener(async (command) => {
   console.log('[AI Translator] Command received:', command);
+
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeTab = tabs && tabs.length > 0 ? tabs[0] : null;
+
+  if (!activeTab || !activeTab.id) return;
+
+  if (command === 'solve_current_question') {
+    await sendMessageToTabSafe(activeTab.id, { action: 'solveQuestion' });
+  }
+
+  if (command === '_execute_action') {
+    await sendMessageToTabSafe(activeTab.id, { action: 'toggleUI' });
+  }
 });
 
 // Open popup on action click (default behavior)
