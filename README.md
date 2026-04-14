@@ -42,7 +42,6 @@ No billing required - all models are free.
 |----------|--------|
 | `Ctrl+Shift+A` | Toggle assistant |
 | `Ctrl+Shift+S` | Analyze current question |
-| `Esc` | Hide all UI |
 
 ### Right-Click Menu
 

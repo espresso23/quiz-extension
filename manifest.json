@@ -17,13 +17,6 @@
         "mac": "Command+Shift+S"
       },
       "description": "Translate current selection"
-    },
-    "hide_all_ui": {
-      "suggested_key": {
-        "default": "Esc",
-        "mac": "Esc"
-      },
-      "description": "Hide translator UI instantly"
     }
   },
   "permissions": [

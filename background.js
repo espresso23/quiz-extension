@@ -115,13 +115,6 @@ chrome.commands.onCommand.addListener((command, tab) => {
       chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' });
     }
   }
-  
-  if (command === 'hide_all_ui') {
-    // Send hide command to active tab
-    if (tab) {
-      chrome.tabs.sendMessage(tab.id, { action: 'hideAllUI' });
-    }
-  }
 });
 
 // Handle side panel opening
