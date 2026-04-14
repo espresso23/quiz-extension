@@ -99,23 +99,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Handle keyboard shortcuts
-chrome.commands.onCommand.addListener((command, tab) => {
+chrome.commands.onCommand.addListener((command) => {
   console.log('[AI Translator] Command received:', command);
-  if (command === 'solve_current_question') {
-    if (tab) {
-      chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.log('[AI Translator] Tab not ready:', chrome.runtime.lastError.message);
-        }
-      });
-    }
-  }
 });
 
-// Handle side panel opening
-chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ tabId: tab.id });
-});
+// Open popup on action click (default behavior)
 
 /**
  * Main function to solve quiz question using AI via OpenRouter
