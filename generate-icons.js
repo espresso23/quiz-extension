@@ -1,5 +1,5 @@
 // generate-icons.js - Auto-generate PNG icons
-// This creates gradient icons with "AI" text using raw PNG encoding
+// This creates a retro floppy-disk style icon (no AI visual cues).
 
 const fs = require('fs');
 const path = require('path');
@@ -19,13 +19,72 @@ function createPNG(width, height) {
   ihdrData[11] = 0; // filter
   ihdrData[12] = 0; // interlace
 
-  // Create pixel data (blue-purple gradient with white "AI" text approximation)
+  // Create pixel data (retro sunset gradient + floppy disk)
   const rowSize = width * 3 + 1; // +1 for filter byte
   const rawData = Buffer.alloc(height * rowSize);
 
-  // Colors
-  const blue = [74, 144, 217];   // #4a90d9
-  const purple = [108, 92, 231];  // #6c5ce7
+  const palette = {
+    bgStart: [255, 126, 95],
+    bgEnd: [254, 180, 123],
+    frameShade: [36, 20, 60],
+    diskBody: [34, 46, 66],
+    diskEdge: [67, 83, 109],
+    shutter: [161, 176, 194],
+    shutterDark: [104, 120, 140],
+    label: [245, 236, 212],
+    labelAccent: [233, 103, 86],
+    notch: [22, 31, 47],
+    led: [238, 84, 84]
+  };
+
+  function setPixel(x, y, color) {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const rowStart = y * rowSize;
+    const pixelStart = rowStart + 1 + x * 3;
+    rawData[pixelStart] = color[0];
+    rawData[pixelStart + 1] = color[1];
+    rawData[pixelStart + 2] = color[2];
+  }
+
+  function blendPixel(x, y, color, alpha) {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const rowStart = y * rowSize;
+    const pixelStart = rowStart + 1 + x * 3;
+    rawData[pixelStart] = Math.round(rawData[pixelStart] * (1 - alpha) + color[0] * alpha);
+    rawData[pixelStart + 1] = Math.round(rawData[pixelStart + 1] * (1 - alpha) + color[1] * alpha);
+    rawData[pixelStart + 2] = Math.round(rawData[pixelStart + 2] * (1 - alpha) + color[2] * alpha);
+  }
+
+  function lerpColor(a, b, t) {
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+  }
+
+  function fillRoundedRect(x, y, w, h, r, color, alpha = 1) {
+    const r2 = r * r;
+    for (let py = y; py < y + h; py++) {
+      for (let px = x; px < x + w; px++) {
+        const dx = px < x + r ? x + r - px : (px > x + w - r - 1 ? px - (x + w - r - 1) : 0);
+        const dy = py < y + r ? y + r - py : (py > y + h - r - 1 ? py - (y + h - r - 1) : 0);
+        if (dx * dx + dy * dy <= r2) {
+          if (alpha >= 1) setPixel(px, py, color);
+          else blendPixel(px, py, color, alpha);
+        }
+      }
+    }
+  }
+
+  function fillRect(x, y, w, h, color, alpha = 1) {
+    for (let py = y; py < y + h; py++) {
+      for (let px = x; px < x + w; px++) {
+        if (alpha >= 1) setPixel(px, py, color);
+        else blendPixel(px, py, color, alpha);
+      }
+    }
+  }
 
   for (let y = 0; y < height; y++) {
     const rowStart = y * rowSize;
@@ -34,13 +93,64 @@ function createPNG(width, height) {
     for (let x = 0; x < width; x++) {
       const pixelStart = rowStart + 1 + x * 3;
 
-      // Gradient from blue (top-left) to purple (bottom-right)
+      // Background gradient with slight radial lift toward top-left.
       const t = (x + y) / (width + height);
-      rawData[pixelStart] = Math.round(blue[0] + (purple[0] - blue[0]) * t);
-      rawData[pixelStart + 1] = Math.round(blue[1] + (purple[1] - blue[1]) * t);
-      rawData[pixelStart + 2] = Math.round(blue[2] + (purple[2] - blue[2]) * t);
+      const base = lerpColor(palette.bgStart, palette.bgEnd, t);
+      const dx = x - width * 0.2;
+      const dy = y - height * 0.2;
+      const dist = Math.sqrt(dx * dx + dy * dy) / (Math.sqrt(width * width + height * height) * 0.7);
+      const glow = Math.max(0, 1 - dist) * 0.18;
+
+      rawData[pixelStart] = Math.min(255, Math.round(base[0] + 255 * glow));
+      rawData[pixelStart + 1] = Math.min(255, Math.round(base[1] + 255 * glow));
+      rawData[pixelStart + 2] = Math.min(255, Math.round(base[2] + 255 * glow));
     }
   }
+
+  // Slight rounded frame to help tiny sizes stay legible.
+  const frameRadius = Math.max(2, Math.round(width * 0.2));
+  fillRoundedRect(0, 0, width, height, frameRadius, palette.frameShade, 0.08);
+
+  // Retro scanlines for subtle 80s texture.
+  for (let y = 2; y < height; y += 4) {
+    fillRect(0, y, width, 1, [255, 255, 255], 0.06);
+  }
+
+  // Floppy disk body.
+  const diskX = Math.round(width * 0.18);
+  const diskY = Math.round(height * 0.15);
+  const diskW = Math.round(width * 0.64);
+  const diskH = Math.round(height * 0.7);
+  const diskR = Math.max(2, Math.round(width * 0.09));
+
+  fillRoundedRect(diskX + Math.max(1, Math.round(width * 0.02)), diskY + Math.max(1, Math.round(height * 0.02)), diskW, diskH, diskR, [0, 0, 0], 0.18);
+  fillRoundedRect(diskX, diskY, diskW, diskH, diskR, palette.diskBody);
+  fillRoundedRect(diskX + 1, diskY + 1, diskW - 2, diskH - 2, Math.max(1, diskR - 1), palette.diskEdge, 0.2);
+
+  // Metal shutter area.
+  const shutterX = diskX + Math.round(diskW * 0.13);
+  const shutterY = diskY + Math.round(diskH * 0.11);
+  const shutterW = Math.round(diskW * 0.74);
+  const shutterH = Math.max(2, Math.round(diskH * 0.22));
+  fillRoundedRect(shutterX, shutterY, shutterW, shutterH, Math.max(1, Math.round(width * 0.03)), palette.shutter);
+  fillRect(shutterX, shutterY + Math.max(1, Math.round(shutterH * 0.45)), shutterW, Math.max(1, Math.round(shutterH * 0.2)), palette.shutterDark, 0.75);
+
+  // Label area.
+  const labelX = diskX + Math.round(diskW * 0.13);
+  const labelY = diskY + Math.round(diskH * 0.43);
+  const labelW = Math.round(diskW * 0.74);
+  const labelH = Math.round(diskH * 0.36);
+  fillRoundedRect(labelX, labelY, labelW, labelH, Math.max(1, Math.round(width * 0.03)), palette.label);
+  fillRect(labelX + 1, labelY + Math.max(1, Math.round(labelH * 0.24)), labelW - 2, Math.max(1, Math.round(labelH * 0.1)), palette.labelAccent, 0.9);
+  fillRect(labelX + 1, labelY + Math.max(1, Math.round(labelH * 0.52)), labelW - 2, Math.max(1, Math.round(labelH * 0.07)), palette.diskEdge, 0.4);
+
+  // Write-protect notch and tiny LED detail.
+  const notchW = Math.max(2, Math.round(diskW * 0.14));
+  const notchH = Math.max(2, Math.round(diskH * 0.13));
+  fillRect(diskX + diskW - notchW - 1, diskY + 1, notchW, notchH, palette.notch);
+
+  const ledSize = Math.max(1, Math.round(width * 0.05));
+  fillRect(diskX + Math.round(diskW * 0.16), diskY + diskH - Math.round(diskH * 0.13), ledSize, ledSize, palette.led);
 
   // Compress pixel data (simple deflate - zlib)
   const zlib = require('zlib');

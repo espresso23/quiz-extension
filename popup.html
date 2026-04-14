@@ -22,13 +22,14 @@
             <input type="checkbox" id="stealthMode" checked>
             <strong>Enable stealth mode</strong> (recommended)
           </label>
-          <p class="hint">Hide UI by default. Use keyboard shortcuts to activate.</p>
+          <p class="hint">Hide UI by default. Select text first, then use shortcuts.</p>
         </div>
 
         <div class="shortcuts-info">
           <p><strong>Keyboard shortcuts:</strong></p>
           <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> Toggle assistant</div>
-          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> Translate current text</div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> Answer selected text</div>
+          <div class="shortcut-item"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Q/E</kbd> Legacy fallback</div>
         </div>
       </div>
 
@@ -38,7 +39,7 @@
         <div class="form-group">
           <label for="apiKey">OpenRouter API Key</label>
           <input type="password" id="apiKey" placeholder="Enter your OpenRouter API key" autocomplete="off">
-          <p class="hint">Get free API key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+          <p class="hint">Get free API key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a></p>
         </div>
 
         <div class="form-group">
@@ -60,8 +61,9 @@
         <div class="form-group checkbox-group">
           <label>
             <input type="checkbox" id="autoDetect">
-            Auto-detect text on page load
+            Auto-detect quiz and generate hint automatically
           </label>
+          <p class="hint">Smart mode: only solves high-confidence questions, once per question.</p>
         </div>
 
         <div class="form-group checkbox-group">
@@ -81,7 +83,7 @@
       <div class="info-box">
         <p><strong>Free to use</strong> - No billing required</p>
         <p><strong>Works on any website</strong> with quiz or form content</p>
-        <p><a href="https://openrouter.ai/models?pricing=free" target="_blank">View all free models</a></p>
+        <p><a href="https://openrouter.ai/models?pricing=free" target="_blank" rel="noopener noreferrer">View all free models</a></p>
       </div>
     </main>
 

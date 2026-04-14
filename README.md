@@ -40,8 +40,8 @@ No billing required - all models are free.
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Shift+A` | Toggle assistant |
-| `Ctrl+Shift+S` | Analyze current question |
+| `Ctrl+Shift+Q` | Toggle assistant |
+| `Ctrl+Shift+E` | Analyze current question |
 
 ### Right-Click Menu
 
@@ -63,7 +63,7 @@ Works on any website with quiz or multiple-choice content:
 ## Features
 
 - AI-powered question analysis using free models (Google Gemma)
-- Auto-detection of quiz questions (optional)
+- Smart auto-detection of quiz questions (high confidence only)
 - Stealth mode - hidden by default, activated via shortcuts
 - Auto-hide after configurable delay
 - Works with multiple choice and short answer questions
@@ -78,7 +78,7 @@ Works on any website with quiz or multiple-choice content:
 | API Key | Your OpenRouter API key |
 | Model | Free AI model selection |
 | Stealth Mode | Hide UI by default (recommended) |
-| Auto-detect | Scan for quiz questions on load |
+| Auto-detect | Detect quiz questions and generate one hint per question |
 | Auto-hide delay | Seconds before UI hides automatically |
 
 ---
@@ -131,7 +131,7 @@ Enabled by default. Extension UI is completely hidden until activated via keyboa
 
 **API key not configured**: Click extension icon and enter OpenRouter API key.
 
-**Quiz not detected**: Navigate to quiz page, press `Ctrl+Shift+S` to manually trigger.
+**Quiz not detected**: Navigate to quiz page, select question text, press `Ctrl+Shift+E` to manually trigger.
 
 **API failed**: Verify key is correct, check internet connection, retry (free models have rate limits).
 

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Icon Generator</title>
   <style>
     body {
@@ -38,7 +40,7 @@
   </style>
 </head>
 <body>
-  <h1>AI Quiz Assistant - Icon Generator</h1>
+  <h1>Retro Icon Generator</h1>
   <p>Click the buttons below to download the required icon files</p>
   
   <div>
@@ -64,36 +66,94 @@
   </div>
 
   <script>
+    function drawRoundedRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
     function drawIcon(canvas, size) {
       const ctx = canvas.getContext('2d');
-      
-      // Create gradient background
+
+      ctx.clearRect(0, 0, size, size);
+
+      // Background
       const gradient = ctx.createLinearGradient(0, 0, size, size);
-      gradient.addColorStop(0, '#4a90d9');
-      gradient.addColorStop(1, '#6c5ce7');
-      
-      // Draw rounded rectangle background
+      gradient.addColorStop(0, '#ff7b5c');
+      gradient.addColorStop(1, '#ffbd56');
+
       const radius = size * 0.2;
       ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.moveTo(radius, 0);
-      ctx.lineTo(size - radius, 0);
-      ctx.quadraticCurveTo(size, 0, size, radius);
-      ctx.lineTo(size, size - radius);
-      ctx.quadraticCurveTo(size, size, size - radius, size);
-      ctx.lineTo(radius, size);
-      ctx.quadraticCurveTo(0, size, 0, size - radius);
-      ctx.lineTo(0, radius);
-      ctx.quadraticCurveTo(0, 0, radius, 0);
-      ctx.closePath();
+      drawRoundedRect(ctx, 0, 0, size, size, radius);
       ctx.fill();
-      
-      // Draw "AI" text
-      ctx.fillStyle = 'white';
-      ctx.font = `bold ${size * 0.55}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('AI', size / 2, size / 2);
+
+      // Scanlines
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for (let y = 2; y < size; y += 4) {
+        ctx.fillRect(0, y, size, 1);
+      }
+
+      // Floppy disk body
+      const diskX = size * 0.18;
+      const diskY = size * 0.15;
+      const diskW = size * 0.64;
+      const diskH = size * 0.7;
+      const diskR = Math.max(2, size * 0.09);
+
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      drawRoundedRect(ctx, diskX + size * 0.02, diskY + size * 0.02, diskW, diskH, diskR);
+      ctx.fill();
+
+      ctx.fillStyle = '#222e42';
+      drawRoundedRect(ctx, diskX, diskY, diskW, diskH, diskR);
+      ctx.fill();
+
+      // Shutter
+      const shutterX = diskX + diskW * 0.13;
+      const shutterY = diskY + diskH * 0.11;
+      const shutterW = diskW * 0.74;
+      const shutterH = Math.max(2, diskH * 0.22);
+
+      ctx.fillStyle = '#a1b0c2';
+      drawRoundedRect(ctx, shutterX, shutterY, shutterW, shutterH, Math.max(1, size * 0.03));
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(104,120,140,0.75)';
+      ctx.fillRect(shutterX, shutterY + shutterH * 0.45, shutterW, Math.max(1, shutterH * 0.2));
+
+      // Label
+      const labelX = diskX + diskW * 0.13;
+      const labelY = diskY + diskH * 0.43;
+      const labelW = diskW * 0.74;
+      const labelH = diskH * 0.36;
+
+      ctx.fillStyle = '#f5ecd4';
+      drawRoundedRect(ctx, labelX, labelY, labelW, labelH, Math.max(1, size * 0.03));
+      ctx.fill();
+
+      ctx.fillStyle = '#e96756';
+      ctx.fillRect(labelX + 1, labelY + labelH * 0.24, labelW - 2, Math.max(1, labelH * 0.1));
+
+      ctx.fillStyle = 'rgba(67,83,109,0.4)';
+      ctx.fillRect(labelX + 1, labelY + labelH * 0.52, labelW - 2, Math.max(1, labelH * 0.07));
+
+      // Notch + LED
+      const notchW = Math.max(2, diskW * 0.14);
+      const notchH = Math.max(2, diskH * 0.13);
+      ctx.fillStyle = '#161f2f';
+      ctx.fillRect(diskX + diskW - notchW - 1, diskY + 1, notchW, notchH);
+
+      const led = Math.max(1, size * 0.05);
+      ctx.fillStyle = '#ee5454';
+      ctx.fillRect(diskX + diskW * 0.16, diskY + diskH * 0.87, led, led);
     }
     
     function downloadIcon(size) {

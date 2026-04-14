@@ -17,7 +17,7 @@ async function loadSettings() {
     if (settings) {
       document.getElementById('apiKey').value = settings.apiKey || '';
       document.getElementById('model').value = settings.model || 'google/gemma-4-26b-a4b-it:free';
-      document.getElementById('autoDetect').checked = settings.autoDetect === true;
+      document.getElementById('autoDetect').checked = settings.autoDetect !== false;
       document.getElementById('showExplanations').checked = settings.showExplanations !== false;
       document.getElementById('stealthMode').checked = settings.stealthMode !== false;
       document.getElementById('autoHideDelay').value = (settings.autoHideDelay || 8000) / 1000;
