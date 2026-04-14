@@ -109,10 +109,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Handle keyboard shortcuts
 chrome.commands.onCommand.addListener((command, tab) => {
+  console.log('[AI Translator] Command received:', command);
   if (command === 'solve_current_question') {
-    // Send solve command to active tab
     if (tab) {
-      chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' });
+      chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.log('[AI Translator] Tab not ready:', chrome.runtime.lastError.message);
+        }
+      });
     }
   }
 });

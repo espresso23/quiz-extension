@@ -6,15 +6,15 @@
   "commands": {
     "_execute_action": {
       "suggested_key": {
-        "default": "Ctrl+Shift+A",
-        "mac": "Command+Shift+A"
+        "default": "Ctrl+Shift+Q",
+        "mac": "Command+Shift+Q"
       },
       "description": "Open translator assistant"
     },
     "solve_current_question": {
       "suggested_key": {
-        "default": "Ctrl+Shift+S",
-        "mac": "Command+Shift+S"
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
       },
       "description": "Translate current selection"
     }

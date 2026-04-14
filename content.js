@@ -3,6 +3,9 @@
 (function() {
   'use strict';
   
+  // Debug
+  console.log('[AI Translator] Content script loaded on:', window.location.href);
+  
   // State
   let currentQuestion = null;
   let sidebarVisible = false;
@@ -24,6 +27,7 @@
   async function init() {
     // Load settings
     settings = await requestSettings();
+    console.log('[AI Translator] Settings loaded:', settings);
     
     // Apply stealth defaults
     if (!settings.stealthMode) {
@@ -32,6 +36,7 @@
     
     // Create hidden UI elements (not visible by default)
     createHiddenUI();
+    console.log('[AI Translator] Hidden UI created');
     
     // Setup keyboard shortcuts
     setupKeyboardShortcuts();
@@ -46,6 +51,8 @@
     
     // Listen for URL changes (SPA navigation)
     observeURLChanges();
+    
+    console.log('[AI Translator] Init complete. Use Ctrl+Shift+Q to toggle UI');
   }
   
   /**
@@ -162,15 +169,17 @@
    */
   function setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
-      // Ctrl+Shift+A or Cmd+Shift+A - Toggle sidebar
-      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+      // Ctrl+Shift+Q or Cmd+Shift+Q - Toggle sidebar
+      if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
         e.preventDefault();
+        console.log('[AI Translator] Toggle shortcut pressed');
         toggleSidebar();
       }
       
-      // Ctrl+Shift+S or Cmd+Shift+S - Solve current question (stealth)
-      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+      // Ctrl+Shift+L or Cmd+Shift+L - Solve current question (stealth)
+      if (e.ctrlKey && e.shiftKey && e.key === 'L') {
         e.preventDefault();
+        console.log('[AI Translator] Solve shortcut pressed');
         solveCurrentQuestion();
       }
       
@@ -340,12 +349,17 @@
    * Toggle sidebar visibility
    */
   function toggleSidebar() {
-    if (!sidebarElement) return;
+    if (!sidebarElement) {
+      console.log('[AI Translator] toggleSidebar called but sidebarElement is null');
+      return;
+    }
     
     sidebarVisible = !sidebarVisible;
+    console.log('[AI Translator] toggleSidebar, visible:', sidebarVisible);
     
     if (sidebarVisible) {
       Stealth.stealthShow(sidebarElement);
+      console.log('[AI Translator] Sidebar shown');
       
       // Update with current question if available
       if (currentQuestion) {
