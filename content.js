@@ -1,9 +1,88 @@
-// content.js - Injected into quiz pages to detect and extract quiz questions (STEALTH MODE)
+// content.js - Injected into quiz pages (STEALTH MODE)
+// Stealth utility inlined here
 
+const Stealth = (function() {
+  'use strict';
+
+  function randomClassName() {
+    const prefixes = ['x', 'k', 'm', 'p', 'v', 'r', 't'];
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    let result = prefix;
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  function randomClassNames(count) {
+    const classes = new Set();
+    while (classes.size < count) {
+      classes.add(randomClassName());
+    }
+    return Array.from(classes);
+  }
+
+  function createElement(tag, options = {}) {
+    const element = document.createElement(tag);
+    if (options.classes) element.className = options.classes.join(' ');
+    if (options.styles) Object.assign(element.style, options.styles);
+    return element;
+  }
+
+  function createShadowContainer(parent) {
+    const container = document.createElement('div');
+    container.setAttribute('data-react-component', 'QuizContainer');
+    container.style.position = 'absolute';
+    container.style.pointerEvents = 'none';
+    container.style.visibility = 'hidden';
+    parent.appendChild(container);
+    const shadow = container.attachShadow({ mode: 'closed' });
+    return { container, shadow };
+  }
+
+  function isFocusModeActive() {
+    return !!document.fullscreenElement;
+  }
+
+  function onFocusModeChange(callback) {
+    if (!document.body) return null;
+    const observer = new MutationObserver(() => callback(isFocusModeActive()));
+    observer.observe(document.body, {
+      attributes: true, childList: true, subtree: true,
+      attributeFilter: ['class', 'data-focus-mode', 'data-exam-mode']
+    });
+    return observer;
+  }
+
+  function stealthHide(element) {
+    element.style.visibility = 'hidden';
+    element.style.position = 'absolute';
+    element.style.pointerEvents = 'none';
+    element.style.opacity = '0';
+  }
+
+  function stealthShow(element) {
+    element.style.visibility = 'visible';
+    element.style.position = 'fixed';
+    element.style.pointerEvents = 'auto';
+    element.style.opacity = '1';
+  }
+
+  function cleanTraces() {
+    document.querySelectorAll('[data-ai-quiz-injected]').forEach(el => el.remove());
+    ['aiQuizSolver', 'aiQuizAssistant', 'quizSolver', 'quizHelper'].forEach(key => {
+      if (window[key]) delete window[key];
+    });
+  }
+
+  return { randomClassName, randomClassNames, createElement, createShadowContainer, isFocusModeActive, onFocusModeChange, stealthHide, stealthShow, cleanTraces };
+})();
+
+// Main content script
 (function() {
   'use strict';
-  
-  // Debug
+
   console.log('[AI Translator] Content script loaded on:', window.location.href);
   
   // State

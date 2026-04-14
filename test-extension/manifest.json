@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Script Test",
+  "version": "1.0.0",
+  "description": "Test if content scripts work",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["test-simple.js"]
+    }
+  ]
+}

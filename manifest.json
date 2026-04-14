@@ -3,22 +3,6 @@
   "name": "AI Translator",
   "version": "1.0.0",
   "description": "AI-powered text translation and learning assistance tool",
-  "commands": {
-    "_execute_action": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+Q",
-        "mac": "Command+Shift+Q"
-      },
-      "description": "Open translator assistant"
-    },
-    "solve_current_question": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+L",
-        "mac": "Command+Shift+L"
-      },
-      "description": "Translate current selection"
-    }
-  },
   "permissions": [
     "storage",
     "contextMenus"
@@ -33,8 +17,7 @@
   "content_scripts": [
     {
       "matches": ["https://*/*", "http://*/*"],
-      "js": ["utils/stealth.js", "content.js"],
-      "css": ["styles.css"],
+      "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
