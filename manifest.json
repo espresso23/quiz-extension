@@ -21,21 +21,18 @@
   },
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting",
-    "sidePanel",
     "contextMenus"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "https://openrouter.ai/*"
+    "https://*/*",
+    "http://*/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["https://*/*", "http://*/*"],
       "js": ["utils/stealth.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
@@ -48,9 +45,6 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
-  },
-  "side_panel": {
-    "default_path": "sidebar.html"
   },
   "icons": {
     "16": "icons/icon16.png",
