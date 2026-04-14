@@ -1,16 +1,40 @@
 {
   "manifest_version": 3,
-  "name": "AI Quiz Assistant",
+  "name": "AI Translator",
   "version": "1.0.0",
-  "description": "AI-powered assistant for quiz questions on learning platforms",
+  "description": "AI-powered text translation and learning assistance tool",
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+A",
+        "mac": "Command+Shift+A"
+      },
+      "description": "Open translator assistant"
+    },
+    "solve_current_question": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Translate current selection"
+    },
+    "hide_all_ui": {
+      "suggested_key": {
+        "default": "Esc",
+        "mac": "Esc"
+      },
+      "description": "Hide translator UI instantly"
+    }
+  },
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
-    "sidePanel"
+    "sidePanel",
+    "contextMenus"
   ],
   "host_permissions": [
-    "https://skillup.global/*",
+    "https://*/*",
     "https://openrouter.ai/*"
   ],
   "background": {
@@ -18,10 +42,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://skillup.global/*"],
-      "js": ["content.js"],
+      "matches": ["https://*/*"],
+      "js": ["utils/stealth.js", "content.js"],
       "css": ["styles.css"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "action": {

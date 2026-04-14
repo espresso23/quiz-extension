@@ -17,8 +17,10 @@ async function loadSettings() {
     if (settings) {
       document.getElementById('apiKey').value = settings.apiKey || '';
       document.getElementById('model').value = settings.model || 'google/gemma-4-26b-a4b-it:free';
-      document.getElementById('autoDetect').checked = settings.autoDetect !== false;
+      document.getElementById('autoDetect').checked = settings.autoDetect === true;
       document.getElementById('showExplanations').checked = settings.showExplanations !== false;
+      document.getElementById('stealthMode').checked = settings.stealthMode !== false;
+      document.getElementById('autoHideDelay').value = (settings.autoHideDelay || 8000) / 1000;
     }
   } catch (err) {
     showStatus('Failed to load settings', 'error');
@@ -30,7 +32,9 @@ async function saveSettings() {
     apiKey: document.getElementById('apiKey').value.trim(),
     model: document.getElementById('model').value,
     autoDetect: document.getElementById('autoDetect').checked,
-    showExplanations: document.getElementById('showExplanations').checked
+    showExplanations: document.getElementById('showExplanations').checked,
+    stealthMode: document.getElementById('stealthMode').checked,
+    autoHideDelay: parseInt(document.getElementById('autoHideDelay').value) * 1000
   };
   
   if (!settings.apiKey) {

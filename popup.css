@@ -21,8 +21,8 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  width: 380px;
-  min-height: 420px;
+  width: 400px;
+  min-height: 480px;
   background: var(--bg-color);
   color: var(--text-color);
 }
@@ -30,7 +30,7 @@ body {
 .popup-container {
   display: flex;
   flex-direction: column;
-  min-height: 420px;
+  min-height: 480px;
 }
 
 .popup-header {
@@ -54,11 +54,11 @@ body {
   flex: 1;
   padding: 16px;
   overflow-y: auto;
-  max-height: 420px;
+  max-height: 460px;
 }
 
 .settings-section {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .settings-section h2 {
@@ -70,7 +70,7 @@ body {
 }
 
 .form-group {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .form-group label {
@@ -82,6 +82,7 @@ body {
 }
 
 .form-group input[type="password"],
+.form-group input[type="number"],
 .form-group select {
   width: 100%;
   padding: 10px 12px;
@@ -95,6 +96,10 @@ body {
 .form-group select:focus {
   outline: none;
   border-color: var(--primary-color);
+}
+
+.form-group input[type="number"] {
+  width: 100px;
 }
 
 .hint {
@@ -123,6 +128,37 @@ body {
 .checkbox-group input[type="checkbox"] {
   width: auto;
   margin: 0;
+}
+
+.shortcuts-info {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.shortcuts-info p {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 4px 0;
+}
+
+.shortcut-item kbd {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: monospace;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .info-box {

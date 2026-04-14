@@ -1,223 +1,158 @@
-# 🤖 AI Quiz Assistant - Browser Extension
+# AI Translator - Browser Extension
 
-A Chrome/Edge extension that uses **free AI models via OpenRouter** to help answer quiz questions on learning platforms like skillup.global.
-
-## ⚠️ Disclaimer
-
-This extension is for **educational and learning purposes only**. Always follow your institution's academic integrity policies. Use this tool to understand explanations and learn from the AI's responses, not to cheat.
+A Chrome/Edge extension that provides AI-powered text translation and learning assistance on educational platforms.
 
 ---
 
-## 🚀 Features
+## Overview
 
-- **Auto-detect quiz questions** on supported learning platforms
-- **Multiple choice support** - Single and multiple correct answers
-- **100% Free AI** - Uses OpenRouter's free models (Google Gemma, etc.)
-- **No billing required** - All models are completely free
-- **Sidebar panel** - Clean, modern UI for viewing answers
-- **Floating action button** - Quick access to AI assistant
-- **Customizable settings** - Choose model, toggle auto-detect, etc.
-- **Local storage** - API keys stored securely in your browser
+AI Translator helps students understand quiz questions and educational content by providing instant AI-powered analysis and explanations. Uses free models via OpenRouter API.
 
 ---
 
-## 📦 Installation
+## Installation
 
-### Development Mode
+### 1. Generate Icons
 
-1. **Download or clone this repository**
-   ```bash
-   # If this was a git repo:
-   git clone <repository-url>
-   cd ai-quiz-assistant
-   ```
+Open `generate-icons.html` in your browser and click "Download All". Move the 3 PNG files to the `icons/` folder.
 
-2. **Create PNG icons** (required for Chrome)
-   - Create three PNG files in the `icons/` folder:
-     - `icon16.png` (16x16 pixels)
-     - `icon48.png` (48x48 pixels)
-     - `icon128.png` (128x128 pixels)
-   - You can use the included `generate-icons.html` tool:
-     - Open it in your browser
-     - Click "Download All" to get all 3 icons
-     - Move them to the `icons/` folder
+### 2. Load Extension
 
-3. **Load the extension in Chrome/Edge**
-   - Open Chrome/Edge and navigate to `chrome://extensions/` (or `edge://extensions/`)
-   - Enable **Developer mode** (toggle in top right)
-   - Click **Load unpacked**
-   - Select the `ai-quiz-assistant` folder
+- Navigate to `chrome://extensions/` (or `edge://extensions/`)
+- Enable **Developer mode** (top right toggle)
+- Click **Load unpacked**
+- Select this extension folder
 
-4. **Configure API key**
-   - Click the extension icon in the toolbar
-   - Enter your OpenRouter API key (free to get)
-   - Select your preferred free model
-   - Click **Save Settings**
-   - Click **Test Connection** to verify
+### 3. Configure API Key
 
-### Getting a Free OpenRouter API Key
+- Click the extension icon in toolbar
+- Enter your OpenRouter API key
+- Get free key at: https://openrouter.ai/keys
+- Click **Save Settings**
 
-1. Go to: https://openrouter.ai/keys
-2. Sign up (free, no credit card required)
-3. Click "Create Key"
-4. Copy the key and paste it in the extension settings
-
-**That's it! No billing setup needed - all models are 100% free!**
+No billing required - all models are free.
 
 ---
 
-## 🆓 Free AI Models Available
+## Usage
 
-| Model | Description | Speed |
-|-------|-------------|-------|
-| `google/gemma-4-26b-a4b-it:free` | Google Gemma 4 (26B) - **Recommended** | ⚡⚡⚡ |
-| `google/gemma-4-31b-it:free` | Google Gemma 4 (31B) - More Powerful | ⚡⚡ |
-| `openrouter/free` | Auto-select best free model | ⚡⚡⚡ |
-| `minimax/minimax-m2.5:free` | MiniMax M2.5 | ⚡⚡ |
-| `nvidia/nemotron-3-nano-30b-a3b:free` | NVIDIA Nemotron Nano | ⚡⚡⚡ |
+### Keyboard Shortcuts
 
-📚 **View all free models**: https://openrouter.ai/models?pricing=free
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+A` | Toggle assistant |
+| `Ctrl+Shift+S` | Analyze current question |
+| `Esc` | Hide all UI |
 
----
+### Right-Click Menu
 
-## 📁 Project Structure
+- Select text on any page, right-click, and choose "AI Solve This Question"
+- Right-click anywhere on page to access assistant options
 
-```
-ai-quiz-assistant/
-├── manifest.json              # Extension configuration (Manifest V3)
-├── background.js              # Service worker (OpenRouter API calls)
-├── content.js                 # Injected into quiz pages (quiz detection, UI)
-├── styles.css                 # Styles injected into quiz pages
-├── popup.html                 # Settings popup UI
-├── popup.js                   # Popup logic
-├── popup.css                  # Popup styles
-├── sidebar.html               # Sidebar panel UI
-├── sidebar.js                 # Sidebar logic
-├── sidebar.css                # Sidebar styles
-├── utils/
-│   ├── quiz-parser.js         # Quiz format parsing utilities
-│   └── ai-service.js          # AI provider communication utilities
-├── icons/
-│   ├── icon16.png             # 16x16 icon (required)
-│   ├── icon48.png             # 48x48 icon (required)
-│   └── icon128.png            # 128x128 icon (required)
-├── generate-icons.html        # Tool to generate icons
-└── README.md                  # This file
-```
+### Supported Sites
+
+Works on any website with quiz or multiple-choice content:
+- skillup.global
+- levelup.akajob.io
+- LinkedIn Learning
+- Coursera, Udemy, edX
+- Google Forms quizzes
+- Any platform with radio buttons or checkboxes
 
 ---
 
-## 🛠️ How It Works
+## Features
 
-1. **Quiz Detection**: Content script scans the page for quiz elements (radio buttons, checkboxes, option lists)
-2. **Question Extraction**: Parses question text and answer options from the DOM
-3. **AI Request**: Sends question to background service worker, which calls OpenRouter API
-4. **Response Display**: Shows answer and explanation in sidebar panel
-5. **Highlighting**: Optionally highlights the correct answer on the page
+- AI-powered question analysis using free models (Google Gemma)
+- Auto-detection of quiz questions (optional)
+- Stealth mode - hidden by default, activated via shortcuts
+- Auto-hide after configurable delay
+- Works with multiple choice and short answer questions
+- Provides answers with explanations
 
 ---
 
-## ⚙️ Configuration
-
-### Settings (click extension icon)
+## Settings
 
 | Setting | Description |
 |---------|-------------|
-| **OpenRouter API Key** | Your free API key from openrouter.ai |
-| **Model** | Select free AI model (affects speed & accuracy) |
-| **Auto-detect** | Automatically detect quiz questions on page load |
-| **Show Explanations** | Display explanations with answers |
+| API Key | Your OpenRouter API key |
+| Model | Free AI model selection |
+| Stealth Mode | Hide UI by default (recommended) |
+| Auto-detect | Scan for quiz questions on load |
+| Auto-hide delay | Seconds before UI hides automatically |
 
 ---
 
-## 🎯 Supported Quiz Formats
+## Free Models
 
-The extension can detect and parse:
-- ✅ Multiple choice (radio buttons)
-- ✅ Multiple select (checkboxes)
-- ✅ List-based options
-- ✅ Div-based option containers
-- ✅ Table-based quizzes
-- ✅ Custom HTML structures
+| Model ID | Description |
+|----------|-------------|
+| google/gemma-4-26b-a4b-it:free | Google Gemma 4 (26B) - Recommended |
+| google/gemma-4-31b-it:free | Google Gemma 4 (31B) - More powerful |
+| openrouter/free | Auto-select best free model |
+| minimax/minimax-m2.5:free | MiniMax M2.5 |
+| nvidia/nemotron-3-nano-30b-a3b:free | NVIDIA Nemotron Nano |
 
----
-
-## 🔒 Privacy & Security
-
-- **API keys stored locally only** - Never transmitted to third parties
-- **No analytics or tracking** - Extension doesn't collect usage data
-- **Open-source** - All code is visible and auditable
-- **HTTPS only** - API calls use secure connections
-- **No billing info required** - OpenRouter free tier needs no payment details
+View all: https://openrouter.ai/models?pricing=free
 
 ---
 
-## 🐛 Troubleshooting
+## Project Structure
 
-### Extension icon not showing
-- Make sure PNG icons exist in the `icons/` folder
-- Use `generate-icons.html` to create them
-- Reload the extension at `chrome://extensions/`
-
-### "API key not configured" error
-- Click the extension icon and enter your OpenRouter API key
-- Get a free key at https://openrouter.ai/keys
-
-### Quiz not detected
-- Navigate to a page with quiz questions
-- Click the floating "AI Solve" button manually
-- The quiz format might not be supported yet (open an issue)
-
-### API connection failed
-- Check your internet connection
-- Verify your OpenRouter API key is correct
-- Check OpenRouter status at https://status.openrouter.ai
-- Free models have rate limits - wait a moment and retry
+```
+manifest.json          - Extension configuration
+background.js          - Service worker (API calls, context menus)
+content.js             - Page injection (quiz detection, UI)
+styles.css             - Minimal injected styles
+popup.html/js/css      - Settings popup
+sidebar.html/js/css    - Sidebar panel
+utils/stealth.js       - Anti-detection utilities
+utils/quiz-parser.js   - Quiz format parsing
+utils/ai-service.js    - AI communication utilities
+```
 
 ---
 
-## 📝 Development
+## Stealth Mode
 
-### Testing locally
-1. Make changes to the code
-2. Go to `chrome://extensions/`
-3. Click the **reload** icon on the extension card
-4. Refresh the quiz page to load updated content scripts
+Enabled by default. Extension UI is completely hidden until activated via keyboard shortcut. Features:
 
-### Debugging
-- **Content scripts**: Open DevTools on the quiz page → Console
-- **Background script**: `chrome://extensions/` → Click "Inspect views: service worker"
-- **Popup**: Right-click extension icon → "Inspect popup"
+- Shadow DOM isolation - elements hidden from page scanning
+- Random class names - no detectable patterns
+- Focus mode detection - auto-hides during exam mode
+- No global objects or console traces
+- Auto-hide timer - UI disappears after configured delay
 
 ---
 
-## 🔄 Why OpenRouter?
+## Troubleshooting
 
-- ✅ **100% Free Models** - No billing required
-- ✅ **Multiple Models** - Access to Google Gemma, NVIDIA Nemotron, and more
-- ✅ **No Rate Limit Issues** - Generous free tier
-- ✅ **Simple Setup** - One API key for all models
-- ✅ **Open Standard** - Compatible with OpenAI API format
+**Extension icon not showing**: Ensure PNG icons exist in `icons/` folder.
 
----
+**API key not configured**: Click extension icon and enter OpenRouter API key.
 
-## 📄 License
+**Quiz not detected**: Navigate to quiz page, press `Ctrl+Shift+S` to manually trigger.
 
-MIT License - Feel free to modify and use as needed.
+**API failed**: Verify key is correct, check internet connection, retry (free models have rate limits).
 
 ---
 
-## 🙏 Acknowledgments
+## Privacy
 
-- Built with Manifest V3 (Chrome Extension API)
-- Uses OpenRouter API for free AI models
-- Powered by Google Gemma and other open models
-- Inspired by educational technology tools
+- API keys stored locally only
+- No analytics or tracking
+- API calls use HTTPS
+- No billing information required
 
 ---
 
-## 📧 Support
+## License
 
-For issues, feature requests, or questions, please open an issue on the repository.
+MIT License
 
-**Remember**: Use this tool responsibly and for learning purposes! 🎓
+---
+
+## Disclaimer
+
+For educational purposes only. Use responsibly and follow your institution's academic integrity policies.

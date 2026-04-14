@@ -9,18 +9,37 @@
 <body>
   <div class="popup-container">
     <header class="popup-header">
-      <h1>🤖 AI Quiz Assistant</h1>
-      <p class="subtitle">Powered by OpenRouter (Free Models)</p>
+      <h1>AI Translator</h1>
+      <p class="subtitle">Powered by OpenRouter</p>
     </header>
 
     <main class="popup-content">
+      <div class="settings-section">
+        <h2>Settings</h2>
+        
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" id="stealthMode" checked>
+            <strong>Enable stealth mode</strong> (recommended)
+          </label>
+          <p class="hint">Hide UI by default. Use keyboard shortcuts to activate.</p>
+        </div>
+
+        <div class="shortcuts-info">
+          <p><strong>Keyboard shortcuts:</strong></p>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> Toggle assistant</div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Translate current text</div>
+          <div class="shortcut-item"><kbd>Esc</kbd> Hide all UI</div>
+        </div>
+      </div>
+
       <div class="settings-section">
         <h2>API Configuration</h2>
         
         <div class="form-group">
           <label for="apiKey">OpenRouter API Key</label>
           <input type="password" id="apiKey" placeholder="Enter your OpenRouter API key" autocomplete="off">
-          <p class="hint">Get your free API key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+          <p class="hint">Get free API key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
         </div>
 
         <div class="form-group">
@@ -32,7 +51,7 @@
             <option value="minimax/minimax-m2.5:free">MiniMax M2.5</option>
             <option value="nvidia/nemotron-3-nano-30b-a3b:free">NVIDIA Nemotron Nano</option>
           </select>
-          <p class="hint">All models are 100% free with rate limits</p>
+          <p class="hint">All models are free with rate limits</p>
         </div>
       </div>
 
@@ -42,21 +61,28 @@
         <div class="form-group checkbox-group">
           <label>
             <input type="checkbox" id="autoDetect">
-            Auto-detect quiz questions on page load
+            Auto-detect text on page load
           </label>
         </div>
 
         <div class="form-group checkbox-group">
           <label>
             <input type="checkbox" id="showExplanations" checked>
-            Show explanations with answers
+            Show detailed explanations
           </label>
+        </div>
+
+        <div class="form-group">
+          <label for="autoHideDelay">Auto-hide delay (seconds)</label>
+          <input type="number" id="autoHideDelay" min="3" max="30" value="8" step="1">
+          <p class="hint">Hide assistant after this time</p>
         </div>
       </div>
 
       <div class="info-box">
-        <p>✅ <strong>No billing required!</strong> All models are completely free.</p>
-        <p>📚 <a href="https://openrouter.ai/models?pricing=free" target="_blank">View all free models →</a></p>
+        <p><strong>Free to use</strong> - No billing required</p>
+        <p><strong>Works on any website</strong> with quiz or form content</p>
+        <p><a href="https://openrouter.ai/models?pricing=free" target="_blank">View all free models</a></p>
       </div>
     </main>
 

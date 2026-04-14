@@ -1,11 +1,13 @@
-// background.js - Service Worker for AI API calls and extension event handling
+// background.js - Service Worker for AI API calls and extension event handling (STEALTH MODE)
 
 // Default settings
 const DEFAULT_SETTINGS = {
   apiKey: '',
   model: 'google/gemma-4-26b-a4b-it:free', // Free Gemini model via OpenRouter
-  autoDetect: true,
-  showExplanations: true
+  autoDetect: false, // Disabled by default for stealth
+  showExplanations: true,
+  stealthMode: true, // Enabled by default
+  autoHideDelay: 8000 // Auto-hide after 8 seconds
 };
 
 // Initialize storage on install
@@ -15,6 +17,70 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.storage.sync.set({ settings: DEFAULT_SETTINGS });
     }
   });
+  
+  // Create right-click context menu
+  createContextMenus();
+});
+
+// Create context menus for stealth activation
+function createContextMenus() {
+  chrome.contextMenus.create({
+    id: 'ai-solve-selection',
+    title: 'Translate This Text',
+    contexts: ['selection']
+  });
+  
+  chrome.contextMenus.create({
+    id: 'ai-solve-page',
+    title: 'Analyze Page Content',
+    contexts: ['page']
+  });
+  
+  chrome.contextMenus.create({
+    id: 'ai-toggle-ui',
+    title: 'Toggle Translator UI',
+    contexts: ['page']
+  });
+  
+  chrome.contextMenus.create({
+    id: 'ai-hide-all',
+    title: 'Hide Translator UI',
+    contexts: ['page']
+  });
+}
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'ai-solve-selection' && info.selectionText) {
+    // Solve selected text
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (selection) => {
+        chrome.runtime.sendMessage({
+          action: 'solveQuiz',
+          question: selection,
+          options: [],
+          questionType: 'short_answer'
+        });
+      },
+      args: [info.selectionText]
+    });
+  }
+  
+  if (info.menuItemId === 'ai-solve-page') {
+    // Send message to content script to solve
+    chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' });
+  }
+  
+  if (info.menuItemId === 'ai-toggle-ui') {
+    // Toggle UI visibility
+    chrome.tabs.sendMessage(tab.id, { action: 'toggleUI' });
+  }
+  
+  if (info.menuItemId === 'ai-hide-all') {
+    // Hide all UI
+    chrome.tabs.sendMessage(tab.id, { action: 'hideAllUI' });
+  }
 });
 
 // Listen for messages from content script or popup
@@ -38,6 +104,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: true });
     });
     return true;
+  }
+});
+
+// Handle keyboard shortcuts
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === 'solve_current_question') {
+    // Send solve command to active tab
+    if (tab) {
+      chrome.tabs.sendMessage(tab.id, { action: 'solveQuestion' });
+    }
+  }
+  
+  if (command === 'hide_all_ui') {
+    // Send hide command to active tab
+    if (tab) {
+      chrome.tabs.sendMessage(tab.id, { action: 'hideAllUI' });
+    }
   }
 });
 
