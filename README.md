@@ -46,6 +46,7 @@ Open popup settings and configure:
 - `Auto-detect`
 - `Show explanations`
 - `Auto-hide delay`
+<img width="558" height="792" alt="image" src="https://github.com/user-attachments/assets/5649c28e-7b75-496e-b0ad-84204cc48542" />
 
 ## Supported Model Options (Current Popup List)
 
@@ -63,6 +64,7 @@ Open popup settings and configure:
 You can also load a custom model ID from saved settings; popup keeps unknown IDs as a custom option.
 
 ## How It Works
+<img width="1188" height="871" alt="image" src="https://github.com/user-attachments/assets/4d73a83c-97ce-49ba-a5b2-ae51a772e419" />
 
 ### Detection and Solving
 
