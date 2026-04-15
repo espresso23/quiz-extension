@@ -3,12 +3,25 @@
 // Default settings
 const DEFAULT_SETTINGS = {
   apiKey: '',
-  model: 'google/gemma-4-26b-a4b-it:free', // Free Gemini model via OpenRouter
+  model: 'google/gemma-4-26b-a4b-it:free', // Default model via OpenRouter
   autoDetect: true, // Smart auto-detect enabled by default
   showExplanations: true,
   stealthMode: true, // Enabled by default
   autoHideDelay: 8000 // Auto-hide after 8 seconds
 };
+
+const MODEL_CATALOG = [
+  'google/gemma-4-26b-a4b-it:free',
+  'google/gemma-4-31b-it:free',
+  'openrouter/free',
+  'minimax/minimax-m2.5:free',
+  'nvidia/nemotron-3-nano-30b-a3b:free',
+  'google/gemini-2.5-flash-lite',
+  'google/gemini-2.5-flash',
+  'google/gemini-2.5-pro',
+  'google/gemini-exp-1206',
+  'openrouter/auto'
+];
 
 // Initialize storage on install
 chrome.runtime.onInstalled.addListener(() => {
@@ -164,8 +177,9 @@ async function handleQuizQuestion(question, options, questionType = 'multiple_ch
   }
   
   const prompt = buildPrompt(question, options, questionType);
+  const selectedModel = normalizePreferredModel(settings.model);
 
-  return callOpenRouterAPI(settings.apiKey, prompt, settings.model, parseAIResponse, {
+  return callOpenRouterAPI(settings.apiKey, prompt, selectedModel, parseAIResponse, {
     allowVision: false
   });
 }
@@ -177,7 +191,7 @@ async function handleVisionQuizQuestion(payload, sender) {
     throw new Error('API key not configured. Please set your OpenRouter API key in extension settings.');
   }
 
-  const visionModel = pickVisionModel(settings.model);
+  const visionModel = pickVisionModel(normalizePreferredModel(settings.model));
   const visionFallbackModels = buildVisionFallbackModels(visionModel);
   const capturedImage = await captureQuizRegionImage(payload, sender);
   const messages = buildVisionMessages(payload, capturedImage);
@@ -265,7 +279,7 @@ async function handleParseQuestionFromDOM(snapshot, hintQuestion = '', hintOptio
   }
 
   const prompt = buildDOMParsePrompt(snapshot, hintQuestion, hintOptions);
-  const parseModel = settings.model || 'google/gemma-4-26b-a4b-it:free';
+  const parseModel = normalizePreferredModel(settings.model || 'google/gemma-4-26b-a4b-it:free');
   return callOpenRouterAPI(settings.apiKey, prompt, parseModel, parseQuestionExtractionResponse);
 }
 
@@ -424,6 +438,18 @@ function buildVisionFallbackModels(primaryModel) {
   });
 
   return unique;
+}
+
+function normalizePreferredModel(model) {
+  const preferred = String(model || '').trim();
+  if (!preferred) return DEFAULT_SETTINGS.model;
+
+  if (MODEL_CATALOG.includes(preferred)) {
+    return preferred;
+  }
+
+  // Allow custom model ids entered from previous versions.
+  return preferred;
 }
 
 /**

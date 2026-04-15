@@ -114,6 +114,31 @@ const Stealth = (function() {
   let sessionCurrentQuestionNumber = 0;
   let extensionContextLost = false;
   let extensionContextNotified = false;
+  let harvardPrefetchObserver = null;
+  let harvardPrefetchTimer = null;
+  let harvardPrefetchRunning = false;
+  let harvardTotalQuestions = 0;
+  let harvardCurrentQuestionNumber = 0;
+  let harvardSeenQuestionFingerprints = new Set();
+  let harvardBridgeInjected = false;
+  let harvardBackgroundQueueRunning = false;
+  let harvardBackgroundDiscovered = 0;
+  const harvardBackgroundQueued = new Set();
+  const harvardBackgroundSolved = new Set();
+  const harvardBackgroundPayloads = new Map();
+  let harvardMessageListenerAttached = false;
+  let akajobPrefetchObserver = null;
+  let akajobPrefetchTimer = null;
+  let akajobPrefetchRunning = false;
+  let akajobTotalQuestions = 0;
+  let akajobCurrentQuestionNumber = 0;
+  let akajobBridgeInjected = false;
+  let akajobBackgroundQueueRunning = false;
+  let akajobBackgroundDiscovered = 0;
+  const akajobBackgroundQueued = new Set();
+  const akajobBackgroundSolved = new Set();
+  const akajobBackgroundPayloads = new Map();
+  let akajobMessageListenerAttached = false;
   const sessionCachedFingerprints = new Set();
   const questionHintCache = new Map();
   const processedQuestionFingerprints = new Map();
@@ -160,6 +185,16 @@ const Stealth = (function() {
 
     // Setup quiz progress observer for prefetch within current session
     setupQuizProgressObserver();
+
+    // Setup Harvard prefetch observer for full in-session preload
+    setupHarvardPrefetchObserver();
+
+    // Setup Harvard async background preload bridge
+    setupHarvardBackgroundPreload();
+
+    // Setup Akajob in-tab prefetch and async background preload
+    setupAkaJobPrefetchObserver();
+    setupAkaJobBackgroundPreload();
     
     // Listen for URL changes (SPA navigation)
     observeURLChanges();
@@ -506,7 +541,10 @@ const Stealth = (function() {
     const linkedInProgress = getLinkedInQuestionProgress();
     const progressKey = linkedInProgress ? `::q${linkedInProgress.current || 0}of${linkedInProgress.total || 0}` : '';
 
-    return `${location.hostname}${location.pathname}${progressKey}::${normalizedQuestion}::${normalizedOptions}`;
+    const akajobProgress = getAkaJobQuestionProgress();
+    const akajobKey = akajobProgress ? `::ak${akajobProgress.current || 0}of${akajobProgress.total || 0}` : '';
+
+    return `${location.hostname}${location.pathname}${progressKey}${akajobKey}::${normalizedQuestion}::${normalizedOptions}`;
   }
 
   async function attemptAutoSolve(question, fingerprint) {
@@ -521,6 +559,12 @@ const Stealth = (function() {
       if (result && !result.error) {
         console.log('[AI Translator] Auto hint ready for detected question');
         markFingerprintAsCached(fingerprint);
+        if (question?.source === 'akajob_skillup') {
+          akajobBackgroundSolved.add(fingerprint);
+        }
+        if (question?.source === 'harvard_manage_mentor') {
+          harvardSeenQuestionFingerprints.add(fingerprint);
+        }
       }
     } finally {
       processedQuestionFingerprints.set(fingerprint, Date.now());
@@ -531,6 +575,12 @@ const Stealth = (function() {
    * Extract question from the DOM
    */
   function extractQuestion() {
+    const akajobQuestion = parseAkaJobSkillupQuestion();
+    if (akajobQuestion) return akajobQuestion;
+
+    const harvardQuestion = parseHarvardManageMentorQuestion();
+    if (harvardQuestion) return harvardQuestion;
+
     const linkedInQuestion = parseLinkedInLearningQuestion();
     if (linkedInQuestion) return linkedInQuestion;
 
@@ -594,6 +644,131 @@ const Stealth = (function() {
     }
 
     return bestQuestion;
+  }
+
+  function parseHarvardManageMentorQuestion() {
+    const blocks = Array.from(document.querySelectorAll('section[class*="assmt_activity__question-block"]'));
+    if (blocks.length === 0) return null;
+
+    const activeBlock = blocks.find((block) => isElementVisible(block)) || blocks[0];
+    if (!activeBlock) return null;
+
+    const questionLegend = activeBlock.querySelector('legend[class*="assmt_activity__question-content-entry"], legend[aria-label]');
+    const ariaQuestion = normalizeText(questionLegend?.getAttribute('aria-label') || '');
+    const textQuestion = normalizeText(questionLegend?.textContent || '');
+    const question = sanitizeQuestionFromPrompt(ariaQuestion || textQuestion, []);
+
+    if (!question || isQuestionPlaceholder(question) || isLikelyNavigationText(question)) {
+      return null;
+    }
+
+    const inputs = Array.from(activeBlock.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+    if (inputs.length < 2) return null;
+
+    const options = [];
+    const optionElements = [];
+    const seen = new Set();
+
+    inputs.forEach((input, index) => {
+      const label = findLabelForInputInBlock(activeBlock, input);
+      const answerTextNode = label?.querySelector('[class*="choice-answer-text"], p, span');
+      let optionText = normalizeText(answerTextNode?.textContent || label?.textContent || input.getAttribute('aria-label') || '');
+
+      if (!optionText || isUselessOptionText(optionText)) {
+        optionText = `Option ${optionLetter(index)}`;
+      }
+
+      if (!optionText || isLikelyNavigationText(optionText) || isQuestionMetaText(optionText)) return;
+
+      const dedupeKey = optionText.toLowerCase();
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+
+      options.push(optionText);
+      optionElements.push(label || input.parentElement || input);
+    });
+
+    if (options.length < 2) return null;
+
+    const hasCheckbox = inputs.some((input) => (input.type || '').toLowerCase() === 'checkbox');
+
+    return {
+      question,
+      options,
+      optionElements,
+      questionType: hasCheckbox ? 'multiple_select' : 'multiple_choice',
+      element: activeBlock,
+      source: 'harvard_manage_mentor'
+    };
+  }
+
+  function parseAkaJobSkillupQuestion() {
+    if (!isAkaJobSkillupPage()) return null;
+
+    const questionContainer = document.querySelector('.question-content-container');
+    if (!questionContainer) return null;
+
+    const questionNode = questionContainer.querySelector('.para-big, p') || questionContainer;
+    const question = normalizeText(questionNode.textContent || '');
+    if (!question || isQuestionPlaceholder(question) || isLikelyNavigationText(question)) return null;
+
+    const optionItems = Array.from(document.querySelectorAll('.ans-option-wrap .list-block li'));
+    if (optionItems.length < 2) return null;
+
+    const options = [];
+    const optionElements = [];
+    const seen = new Set();
+
+    optionItems.forEach((item, index) => {
+      const label = item.querySelector('label') || item;
+      let text = normalizeText(label.textContent || '');
+      if (!text || isUselessOptionText(text)) {
+        text = `Option ${optionLetter(index)}`;
+      }
+
+      if (!text || isLikelyNavigationText(text) || isQuestionMetaText(text)) return;
+      const key = text.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      options.push(text);
+      optionElements.push(item);
+    });
+
+    if (options.length < 2) return null;
+
+    const hasCheckbox = optionItems.some((item) => {
+      const input = item.querySelector('input[type="checkbox"]');
+      return !!input;
+    });
+
+    const progress = getAkaJobQuestionProgress();
+    if (progress) {
+      akajobCurrentQuestionNumber = progress.current;
+      akajobTotalQuestions = progress.total;
+    }
+
+    return {
+      question,
+      options,
+      optionElements,
+      questionType: hasCheckbox ? 'multiple_select' : 'multiple_choice',
+      element: questionContainer.closest('.row') || questionContainer.closest('.que-wrap') || questionContainer,
+      questionTextElement: questionContainer,
+      source: 'akajob_skillup'
+    };
+  }
+
+  function findLabelForInputInBlock(block, input) {
+    if (!block || !input) return null;
+
+    if (input.id) {
+      const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(input.id) : input.id.replace(/"/g, '\\"');
+      const byFor = block.querySelector(`label[for="${escapedId}"]`);
+      if (byFor) return byFor;
+    }
+
+    return input.closest('label') || input.parentElement;
   }
 
   function parseLinkedInLearningQuestion() {
@@ -1803,9 +1978,19 @@ const Stealth = (function() {
       currentQuestion = preferQuestionPayload(selectedQuestion, detectedQuestion) || currentQuestion;
       currentQuestion = ensureQuestionText(currentQuestion);
 
+      if (currentQuestion && currentQuestion.source === 'harvard_manage_mentor' && isQuestionPlaceholder(currentQuestion.question)) {
+        const legendNode = currentQuestion.element?.querySelector('legend[class*="assmt_activity__question-content-entry"], legend[aria-label]');
+        const hardQuestion = normalizeText(legendNode?.getAttribute('aria-label') || legendNode?.textContent || '');
+        if (hardQuestion) currentQuestion.question = hardQuestion;
+      }
+
       if (currentQuestion) {
+        updateAkaJobProgressFromQuestion(currentQuestion);
+        updateHarvardProgressFromQuestion(currentQuestion);
         updateSidebarWithQuestion(currentQuestion);
         scheduleQuizProgressRefresh(200);
+        scheduleHarvardPrefetch(300);
+        scheduleAkaJobPrefetch(300);
       }
       
       // Do not auto-hide when opened manually by shortcut.
@@ -1897,10 +2082,37 @@ const Stealth = (function() {
     const progressEl = sidebarElement?.querySelector('#sidebar-progress');
     if (!progressEl) return;
 
-    const latest = getLinkedInQuestionProgress();
-    if (latest) {
-      sessionCurrentQuestionNumber = latest.current || sessionCurrentQuestionNumber;
-      sessionTotalQuestions = latest.total || sessionTotalQuestions;
+    const isLinkedIn = /linkedin\.com\/learning/i.test(location.href);
+    const isHarvard = isHarvardManageMentorPage();
+    const isAkaJob = isAkaJobSkillupPage();
+
+    if (!isLinkedIn && !isHarvard && !isAkaJob) {
+      progressEl.style.display = 'none';
+      return;
+    }
+
+    if (isLinkedIn) {
+      const latest = getLinkedInQuestionProgress();
+      if (latest) {
+        sessionCurrentQuestionNumber = latest.current || sessionCurrentQuestionNumber;
+        sessionTotalQuestions = latest.total || sessionTotalQuestions;
+      }
+    } else if (isHarvard) {
+      const latest = getHarvardQuestionProgress();
+      if (latest) {
+        harvardCurrentQuestionNumber = latest.current;
+        harvardTotalQuestions = latest.total;
+      }
+      sessionCurrentQuestionNumber = harvardCurrentQuestionNumber || sessionCurrentQuestionNumber;
+      sessionTotalQuestions = harvardTotalQuestions || sessionTotalQuestions;
+    } else if (isAkaJob) {
+      const latest = getAkaJobQuestionProgress();
+      if (latest) {
+        akajobCurrentQuestionNumber = latest.current;
+        akajobTotalQuestions = latest.total;
+      }
+      sessionCurrentQuestionNumber = akajobCurrentQuestionNumber || sessionCurrentQuestionNumber;
+      sessionTotalQuestions = akajobTotalQuestions || sessionTotalQuestions;
     }
 
     const total = sessionTotalQuestions;
@@ -1914,7 +2126,20 @@ const Stealth = (function() {
 
     progressEl.style.display = 'block';
     const progressText = total > 0 ? `${current || '?'} / ${total}` : `${current || '?'} / ?`;
-    progressEl.textContent = `Quiz progress: ${progressText} - Cached: ${solved}`;
+    const target = total > 0 ? total : '?';
+    if (isHarvard) {
+      const discovered = Math.max(harvardBackgroundDiscovered, solved);
+      progressEl.textContent = `Quiz progress: ${progressText} - Cached: ${solved}/${target} - Prefetch discovered: ${discovered}`;
+      return;
+    }
+
+    if (isAkaJob) {
+      const discovered = Math.max(akajobBackgroundDiscovered, solved);
+      progressEl.textContent = `Quiz progress: ${progressText} - Cached: ${solved}/${target} - Prefetch discovered: ${discovered}`;
+      return;
+    }
+
+    progressEl.textContent = `Quiz progress: ${progressText} - Cached: ${solved}/${target}`;
   }
   
   /**
@@ -1959,6 +2184,16 @@ const Stealth = (function() {
 
     currentQuestion = ensureQuestionText(currentQuestion);
     currentQuestion = postProcessQuestionPayload(currentQuestion);
+
+    updateAkaJobProgressFromQuestion(currentQuestion);
+    updateHarvardProgressFromQuestion(currentQuestion);
+
+    if (currentQuestion && currentQuestion.source === 'harvard_manage_mentor' && isQuestionPlaceholder(currentQuestion.question)) {
+      const hardQuestion = normalizeText(currentQuestion.element?.querySelector('legend[class*="assmt_activity__question-content-entry"], legend[aria-label]')?.getAttribute('aria-label') || currentQuestion.element?.querySelector('legend[class*="assmt_activity__question-content-entry"], legend[aria-label]')?.textContent || '');
+      if (hardQuestion) {
+        currentQuestion.question = hardQuestion;
+      }
+    }
 
     if (!options.skipAIFallback && shouldAttemptAIFallback(currentQuestion)) {
       const recovered = await recoverQuestionWithAIFallback(currentQuestion);
@@ -2270,6 +2505,19 @@ const Stealth = (function() {
       quizProgressObserver = null;
     }
 
+    if (harvardPrefetchObserver) {
+      harvardPrefetchObserver.disconnect();
+      harvardPrefetchObserver = null;
+    }
+
+    if (akajobPrefetchObserver) {
+      akajobPrefetchObserver.disconnect();
+      akajobPrefetchObserver = null;
+    }
+
+    clearTimeout(harvardPrefetchTimer);
+    clearTimeout(akajobPrefetchTimer);
+
     showError('Extension was updated/reloaded. Refresh this tab once to reconnect.');
   }
 
@@ -2325,6 +2573,412 @@ const Stealth = (function() {
     });
   }
 
+  function setupHarvardPrefetchObserver() {
+    if (!isHarvardManageMentorPage()) return;
+    if (!document.body) return;
+    if (extensionContextLost) return;
+
+    if (harvardPrefetchObserver) {
+      harvardPrefetchObserver.disconnect();
+      harvardPrefetchObserver = null;
+    }
+
+    scheduleHarvardPrefetch(1000);
+
+    harvardPrefetchObserver = new MutationObserver(() => {
+      scheduleHarvardPrefetch(500);
+    });
+
+    harvardPrefetchObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'aria-hidden']
+    });
+  }
+
+  function setupHarvardBackgroundPreload() {
+    if (!isHarvardManageMentorPage()) return;
+
+    if (!harvardMessageListenerAttached) {
+      window.addEventListener('message', onHarvardBridgeMessage, false);
+      harvardMessageListenerAttached = true;
+    }
+
+    injectHarvardFetchBridge();
+  }
+
+  function setupAkaJobPrefetchObserver() {
+    if (!isAkaJobSkillupPage()) return;
+    if (!document.body) return;
+    if (extensionContextLost) return;
+
+    if (akajobPrefetchObserver) {
+      akajobPrefetchObserver.disconnect();
+      akajobPrefetchObserver = null;
+    }
+
+    scheduleAkaJobPrefetch(900);
+
+    akajobPrefetchObserver = new MutationObserver(() => {
+      scheduleAkaJobPrefetch(400);
+    });
+
+    akajobPrefetchObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'aria-hidden']
+    });
+  }
+
+  function setupAkaJobBackgroundPreload() {
+    if (!isAkaJobSkillupPage()) return;
+
+    if (!akajobMessageListenerAttached) {
+      window.addEventListener('message', onAkaJobBridgeMessage, false);
+      akajobMessageListenerAttached = true;
+    }
+
+    injectAkaJobFetchBridge();
+  }
+
+  function scheduleAkaJobPrefetch(delay = 500) {
+    clearTimeout(akajobPrefetchTimer);
+    akajobPrefetchTimer = setTimeout(() => {
+      runAkaJobPrefetch();
+    }, delay);
+  }
+
+  async function runAkaJobPrefetch() {
+    if (!isAkaJobSkillupPage()) return;
+    if (extensionContextLost) return;
+    if (!settings?.apiKey) return;
+    if (akajobPrefetchRunning) return;
+
+    const question = parseAkaJobSkillupQuestion();
+    if (!question) return;
+
+    updateAkaJobProgressFromQuestion(question);
+
+    const fingerprint = getQuestionFingerprint(question);
+    if (!fingerprint) return;
+
+    if (questionHintCache.has(fingerprint)) {
+      markFingerprintAsCached(fingerprint);
+      return;
+    }
+
+    akajobPrefetchRunning = true;
+    try {
+      await prefetchQuestionHint(question, fingerprint);
+      markFingerprintAsCached(fingerprint);
+    } finally {
+      akajobPrefetchRunning = false;
+      updateProgressBadge();
+    }
+  }
+
+  function isAkaJobSkillupPage() {
+    return /skillup-test\.akajob\.io/i.test(location.hostname) ||
+      !!document.querySelector('#questionHeader1, .question-content-container, .ans-option-wrap .list-block');
+  }
+
+  function getAkaJobQuestionProgress() {
+    const header = normalizeText(document.querySelector('#questionHeader1')?.textContent || '');
+    if (!header) return null;
+
+    const match = header.match(/question\s*:?\s*(\d+)\s+of\s+(\d+)/i);
+    if (!match) return null;
+
+    const current = parseInt(match[1], 10);
+    const total = parseInt(match[2], 10);
+    return {
+      current: Number.isFinite(current) ? current : 0,
+      total: Number.isFinite(total) ? total : 0
+    };
+  }
+
+  function updateAkaJobProgressFromQuestion(question) {
+    if (!question || question.source !== 'akajob_skillup') return;
+
+    const progress = getAkaJobQuestionProgress();
+    if (!progress) return;
+
+    akajobCurrentQuestionNumber = progress.current;
+    akajobTotalQuestions = progress.total;
+    sessionCurrentQuestionNumber = progress.current;
+    sessionTotalQuestions = progress.total;
+    updateProgressBadge();
+  }
+
+  function injectExternalPageBridge(bridgeType, bridgeSource) {
+    try {
+      const marker = `data-ai-translator-bridge-${bridgeType}`;
+      if (document.documentElement.hasAttribute(marker)) {
+        return true;
+      }
+
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('page-bridge.js');
+      script.async = false;
+      script.dataset.bridgeType = bridgeType;
+      script.dataset.bridgeSource = bridgeSource;
+
+      (document.head || document.documentElement).appendChild(script);
+      script.remove();
+
+      document.documentElement.setAttribute(marker, '1');
+      return true;
+    } catch (error) {
+      console.warn('[AI Translator] External page bridge injection failed:', error);
+      return false;
+    }
+  }
+
+  function injectAkaJobFetchBridge() {
+    if (akajobBridgeInjected) return;
+    if (!isAkaJobSkillupPage()) return;
+
+    const ok = injectExternalPageBridge('akajob', 'ai-translator-akajob-bridge');
+    if (ok) {
+      akajobBridgeInjected = true;
+    }
+  }
+
+  function onAkaJobBridgeMessage(event) {
+    if (!event || event.source !== window) return;
+    const data = event.data;
+    if (!data || data.source !== 'ai-translator-akajob-bridge') return;
+
+    const payload = data.payload;
+    if (!payload || payload.type !== 'questions') return;
+
+    enqueueAkaJobBackgroundQuestions(payload.questions || []);
+  }
+
+  function enqueueAkaJobBackgroundQuestions(questions) {
+    if (!Array.isArray(questions) || questions.length === 0) return;
+    if (!settings?.apiKey) return;
+
+    questions.forEach((q) => {
+      const normalizedQuestion = normalizeText(q.question || '');
+      const normalizedOptions = Array.isArray(q.options)
+        ? q.options.map((opt) => normalizeText(opt)).filter(Boolean)
+        : [];
+
+      if (!normalizedQuestion || normalizedOptions.length < 2) return;
+
+      const payload = {
+        question: normalizedQuestion,
+        options: normalizedOptions,
+        optionElements: [],
+        questionType: 'multiple_choice',
+        element: null,
+        source: 'akajob_skillup_prefetch'
+      };
+
+      const fingerprint = getQuestionFingerprint(payload);
+      if (!fingerprint) return;
+      if (akajobBackgroundQueued.has(fingerprint) || questionHintCache.has(fingerprint)) return;
+
+      akajobBackgroundQueued.add(fingerprint);
+      akajobBackgroundPayloads.set(fingerprint, payload);
+      akajobBackgroundDiscovered += 1;
+    });
+
+    runAkaJobBackgroundQueue();
+    updateProgressBadge();
+  }
+
+  async function runAkaJobBackgroundQueue() {
+    if (akajobBackgroundQueueRunning) return;
+    if (extensionContextLost) return;
+    if (!settings?.apiKey) return;
+
+    akajobBackgroundQueueRunning = true;
+    try {
+      const payloadEntries = Array.from(akajobBackgroundPayloads.entries());
+      for (const [fingerprint, payload] of payloadEntries) {
+        if (questionHintCache.has(fingerprint) || akajobBackgroundSolved.has(fingerprint)) continue;
+        if (!payload) continue;
+
+        const result = await solveCurrentQuestion(payload, {
+          allowSelectionOverride: false,
+          silent: true,
+          skipAutoHide: true,
+          skipAIFallback: true,
+          markFingerprint: fingerprint
+        });
+
+        if (result && !result.error) {
+          akajobBackgroundSolved.add(fingerprint);
+          markFingerprintAsCached(fingerprint);
+        }
+
+        akajobBackgroundPayloads.delete(fingerprint);
+      }
+    } finally {
+      akajobBackgroundQueueRunning = false;
+      updateProgressBadge();
+    }
+  }
+
+  function injectHarvardFetchBridge() {
+    if (harvardBridgeInjected) return;
+    if (!isHarvardManageMentorPage()) return;
+
+    const ok = injectExternalPageBridge('harvard', 'ai-translator-hmm-bridge');
+    if (ok) {
+      harvardBridgeInjected = true;
+    }
+  }
+
+  function onHarvardBridgeMessage(event) {
+    if (!event || event.source !== window) return;
+    const data = event.data;
+    if (!data || data.source !== 'ai-translator-hmm-bridge') return;
+
+    const payload = data.payload;
+    if (!payload || payload.type !== 'questions') return;
+
+    enqueueHarvardBackgroundQuestions(payload.questions || []);
+  }
+
+  function enqueueHarvardBackgroundQuestions(questions) {
+    if (!Array.isArray(questions) || questions.length === 0) return;
+    if (!settings?.apiKey) return;
+
+    questions.forEach((q) => {
+      const normalizedQuestion = normalizeText(q.question || '');
+      const normalizedOptions = Array.isArray(q.options)
+        ? q.options.map((opt) => normalizeText(opt)).filter(Boolean)
+        : [];
+
+      if (!normalizedQuestion || normalizedOptions.length < 2) return;
+
+      const payload = {
+        question: normalizedQuestion,
+        options: normalizedOptions,
+        optionElements: [],
+        questionType: 'multiple_choice',
+        element: null,
+        source: 'harvard_manage_mentor_prefetch'
+      };
+
+      const fingerprint = getQuestionFingerprint(payload);
+      if (!fingerprint) return;
+      if (harvardBackgroundQueued.has(fingerprint) || questionHintCache.has(fingerprint)) return;
+
+      harvardBackgroundQueued.add(fingerprint);
+      harvardBackgroundDiscovered += 1;
+      harvardBackgroundPayloads.set(fingerprint, payload);
+    });
+
+    runHarvardBackgroundQueue();
+    updateProgressBadge();
+  }
+
+  async function runHarvardBackgroundQueue() {
+    if (harvardBackgroundQueueRunning) return;
+    if (extensionContextLost) return;
+    if (!settings?.apiKey) return;
+
+    harvardBackgroundQueueRunning = true;
+    try {
+      const payloadEntries = Array.from(harvardBackgroundPayloads.entries());
+
+      for (const [fingerprint, payload] of payloadEntries) {
+        if (questionHintCache.has(fingerprint) || harvardBackgroundSolved.has(fingerprint)) continue;
+        if (!payload) continue;
+
+        const result = await solveCurrentQuestion(payload, {
+          allowSelectionOverride: false,
+          silent: true,
+          skipAutoHide: true,
+          skipAIFallback: true,
+          markFingerprint: fingerprint
+        });
+
+        if (result && !result.error) {
+          harvardBackgroundSolved.add(fingerprint);
+          markFingerprintAsCached(fingerprint);
+        }
+
+        harvardBackgroundPayloads.delete(fingerprint);
+      }
+    } finally {
+      harvardBackgroundQueueRunning = false;
+      updateProgressBadge();
+    }
+  }
+
+  function scheduleHarvardPrefetch(delay = 600) {
+    clearTimeout(harvardPrefetchTimer);
+    harvardPrefetchTimer = setTimeout(() => {
+      runHarvardPrefetch();
+    }, delay);
+  }
+
+  async function runHarvardPrefetch() {
+    if (!isHarvardManageMentorPage()) return;
+    if (extensionContextLost) return;
+    if (!settings?.apiKey) return;
+    if (harvardPrefetchRunning) return;
+
+    const question = parseHarvardManageMentorQuestion();
+    if (!question) return;
+
+    const progress = getHarvardQuestionProgress(question.element);
+    if (progress) {
+      harvardCurrentQuestionNumber = progress.current;
+      harvardTotalQuestions = progress.total;
+      sessionCurrentQuestionNumber = progress.current;
+      sessionTotalQuestions = progress.total;
+      updateProgressBadge();
+    }
+
+    const fingerprint = getQuestionFingerprint(question);
+    if (!fingerprint) return;
+
+    if (questionHintCache.has(fingerprint)) {
+      markFingerprintAsCached(fingerprint);
+      return;
+    }
+
+    harvardPrefetchRunning = true;
+    try {
+      await prefetchQuestionHint(question, fingerprint);
+      harvardSeenQuestionFingerprints.add(fingerprint);
+      markFingerprintAsCached(fingerprint);
+    } finally {
+      harvardPrefetchRunning = false;
+      updateProgressBadge();
+    }
+  }
+
+  function isHarvardManageMentorPage() {
+    return !!document.querySelector('section[class*="assmt_activity__question-block"]');
+  }
+
+  function getHarvardQuestionProgress(activeBlock = null) {
+    const block = activeBlock || document.querySelector('section[class*="assmt_activity__question-block"]');
+    if (!block) return null;
+
+    const header = normalizeText(block.querySelector('[class*="question-header-text"]')?.textContent || '');
+    if (!header) return null;
+
+    const match = header.match(/question\s+(\d+)\s+of\s+(\d+)/i);
+    if (!match) return null;
+
+    const current = parseInt(match[1], 10);
+    const total = parseInt(match[2], 10);
+    return {
+      current: Number.isFinite(current) ? current : 0,
+      total: Number.isFinite(total) ? total : 0
+    };
+  }
+
   function scheduleQuizProgressRefresh(delay = 500) {
     clearTimeout(quizProgressTimer);
     quizProgressTimer = setTimeout(() => {
@@ -2334,6 +2988,10 @@ const Stealth = (function() {
 
   async function refreshQuizProgressAndPrefetch() {
     if (extensionContextLost) return;
+
+    if (!/linkedin\.com\/learning/i.test(location.href)) {
+      return;
+    }
 
     const info = getLinkedInQuestionProgress();
     if (!info) return;
@@ -2361,6 +3019,47 @@ const Stealth = (function() {
     await prefetchQuestionHint(question, fingerprint);
   }
 
+  async function refreshAkaJobProgressAndPrefetch() {
+    if (extensionContextLost) return;
+    if (!isAkaJobSkillupPage()) return;
+
+    const info = getAkaJobQuestionProgress();
+    if (info) {
+      akajobCurrentQuestionNumber = info.current;
+      akajobTotalQuestions = info.total;
+      sessionCurrentQuestionNumber = info.current;
+      sessionTotalQuestions = info.total;
+      updateProgressBadge();
+    }
+
+    const question = parseAkaJobSkillupQuestion();
+    if (!question) return;
+
+    const fingerprint = getQuestionFingerprint(question);
+    if (!fingerprint) return;
+
+    if (questionHintCache.has(fingerprint)) {
+      markFingerprintAsCached(fingerprint);
+      return;
+    }
+
+    if (!settings?.apiKey) return;
+    await prefetchQuestionHint(question, fingerprint);
+  }
+
+  function updateHarvardProgressFromQuestion(question) {
+    if (!question || question.source !== 'harvard_manage_mentor') return;
+
+    const progress = getHarvardQuestionProgress(question.element);
+    if (!progress) return;
+
+    harvardCurrentQuestionNumber = progress.current;
+    harvardTotalQuestions = progress.total;
+    sessionCurrentQuestionNumber = progress.current;
+    sessionTotalQuestions = progress.total;
+    updateProgressBadge();
+  }
+
   function getLinkedInQuestionProgress() {
     if (!/linkedin\.com\/learning/i.test(location.href)) return null;
 
@@ -2384,6 +3083,14 @@ const Stealth = (function() {
     if (questionHintCache.has(fingerprint)) return;
     if (prefetchInFlight.has(fingerprint)) return;
 
+    if (question.source === 'harvard_manage_mentor' && !sidebarVisible) {
+      createHiddenUI();
+    }
+
+    if (question.source === 'akajob_skillup' && !sidebarVisible) {
+      createHiddenUI();
+    }
+
     const task = solveCurrentQuestion(question, {
       allowSelectionOverride: false,
       silent: true,
@@ -2405,6 +3112,12 @@ const Stealth = (function() {
   function markFingerprintAsCached(fingerprint) {
     if (!fingerprint) return;
     sessionCachedFingerprints.add(fingerprint);
+    if (isAkaJobSkillupPage()) {
+      akajobBackgroundSolved.add(fingerprint);
+    }
+    if (isHarvardManageMentorPage()) {
+      harvardSeenQuestionFingerprints.add(fingerprint);
+    }
     updateProgressBadge();
   }
   
@@ -2424,6 +3137,23 @@ const Stealth = (function() {
           extensionContextNotified = false;
           lastObservedQuestionFingerprint = '';
           sessionCachedFingerprints.clear();
+          harvardSeenQuestionFingerprints.clear();
+          harvardBackgroundQueued.clear();
+          harvardBackgroundSolved.clear();
+          harvardBackgroundPayloads.clear();
+          harvardBackgroundDiscovered = 0;
+          harvardCurrentQuestionNumber = 0;
+          harvardTotalQuestions = 0;
+          harvardPrefetchRunning = false;
+          harvardBackgroundQueueRunning = false;
+          akajobBackgroundQueued.clear();
+          akajobBackgroundSolved.clear();
+          akajobBackgroundPayloads.clear();
+          akajobBackgroundDiscovered = 0;
+          akajobCurrentQuestionNumber = 0;
+          akajobTotalQuestions = 0;
+          akajobPrefetchRunning = false;
+          akajobBackgroundQueueRunning = false;
           sessionCurrentQuestionNumber = 0;
           sessionTotalQuestions = 0;
           pendingAutoSolveFingerprints.clear();
@@ -2433,6 +3163,9 @@ const Stealth = (function() {
           autoSolveCooldownUntil = 0;
           scheduleAutoDetectScan(900);
           scheduleQuizProgressRefresh(900);
+          scheduleHarvardPrefetch(900);
+          scheduleAkaJobPrefetch(900);
+          refreshAkaJobProgressAndPrefetch();
         }, 500);
       }
     }).observe(document, { subtree: true, childList: true });
@@ -2644,10 +3377,13 @@ const Stealth = (function() {
       images.push({ url: normalized });
     }
 
-    question.element.querySelectorAll('img').forEach((img) => {
-      const src = img.currentSrc || img.src || img.getAttribute('src') || '';
-      addUrl(src);
-    });
+    const questionTextElement = question.questionTextElement;
+    if (questionTextElement && typeof questionTextElement.querySelectorAll === 'function') {
+      questionTextElement.querySelectorAll('img').forEach((img) => {
+        const src = img.currentSrc || img.src || img.getAttribute('src') || '';
+        addUrl(src);
+      });
+    }
 
     question.optionElements.forEach((el) => {
       if (!el || typeof el.querySelectorAll !== 'function') return;
@@ -2676,6 +3412,13 @@ const Stealth = (function() {
   function hasVisualOnlyOptions(question) {
     if (!question || !Array.isArray(question.options)) return false;
     if (question.options.length < 2) return false;
+
+    if (question.source === 'akajob_skillup') {
+      return Array.isArray(question.optionElements) && question.optionElements.some((el) => {
+        if (!el || typeof el.querySelector !== 'function') return false;
+        return !!el.querySelector('img, svg, canvas, table');
+      });
+    }
 
     if (question.visualOptions) return true;
 

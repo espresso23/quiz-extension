@@ -10,12 +10,26 @@ function setupEventListeners() {
   document.getElementById('testBtn').addEventListener('click', testConnection);
 }
 
+function ensureModelOption(modelValue) {
+  const modelSelect = document.getElementById('model');
+  if (!modelSelect || !modelValue) return;
+
+  const exists = Array.from(modelSelect.options).some((opt) => opt.value === modelValue);
+  if (exists) return;
+
+  const option = document.createElement('option');
+  option.value = modelValue;
+  option.textContent = `${modelValue} (Custom)`;
+  modelSelect.appendChild(option);
+}
+
 async function loadSettings() {
   try {
     const settings = await requestFromBackground({ action: 'getSettings' });
     
     if (settings) {
       document.getElementById('apiKey').value = settings.apiKey || '';
+      ensureModelOption(settings.model);
       document.getElementById('model').value = settings.model || 'google/gemma-4-26b-a4b-it:free';
       document.getElementById('autoDetect').checked = settings.autoDetect !== false;
       document.getElementById('showExplanations').checked = settings.showExplanations !== false;
