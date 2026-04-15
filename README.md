@@ -1,157 +1,149 @@
-# AI Translator - Browser Extension
+# AI Translator Browser Extension
 
-A Chrome/Edge extension that provides AI-powered text translation and learning assistance on educational platforms.
+AI Translator is a Chrome/Edge extension for quiz assistance on learning platforms. It detects active questions, calls OpenRouter models, and shows answer hints in a stealth sidebar.
 
----
+## Highlights
 
-## Overview
+- Supports quiz flows on LinkedIn Learning, Harvard ManageMentor, and Akajob/SkillUp.
+- Handles multiple choice, multiple select, visual-heavy questions, and coding questions.
+- Includes in-tab prefetch and background preload so later questions can be answered faster.
+- Supports both free and paid OpenRouter models (including Gemini 2.5 variants).
+- Uses a CSP-safe page bridge (`page-bridge.js`) for sites that block inline injected scripts.
+- Includes extension-context recovery messaging when service worker/content communication breaks after reload/update.
 
-AI Translator helps students understand quiz questions and educational content by providing instant AI-powered analysis and explanations. Uses free models via OpenRouter API.
+## Keyboard Shortcuts
 
----
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Shift+Q` | Toggle sidebar |
+| `Ctrl+Shift+E` | Solve current detected question |
+| `Alt+Shift+Q` | Legacy toggle fallback |
+| `Alt+Shift+E` | Legacy solve fallback |
 
 ## Installation
 
-### 1. Generate Icons
+1. Open `chrome://extensions/` (or `edge://extensions/`).
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select this repository folder.
+5. Open extension popup and set your OpenRouter API key.
 
-Open `generate-icons.html` in your browser and click "Download All". Move the 3 PNG files to the `icons/` folder.
+### Icons
 
-### 2. Load Extension
+If icons are missing:
 
-- Navigate to `chrome://extensions/` (or `edge://extensions/`)
-- Enable **Developer mode** (top right toggle)
-- Click **Load unpacked**
-- Select this extension folder
+1. Open `generate-icons.html` in a browser.
+2. Click **Download All**.
+3. Move generated PNG files into `icons/`.
 
-### 3. Configure API Key
+## Configuration
 
-- Click the extension icon in toolbar
-- Enter your OpenRouter API key
-- Get free key at: https://openrouter.ai/keys
-- Click **Save Settings**
+Open popup settings and configure:
 
-No billing required - all models are free.
+- `OpenRouter API Key`
+- `Model` (free, paid, or custom model ID)
+- `Stealth mode`
+- `Auto-detect`
+- `Show explanations`
+- `Auto-hide delay`
 
----
+## Supported Model Options (Current Popup List)
 
-## Usage
+- `google/gemma-4-26b-a4b-it:free`
+- `google/gemma-4-31b-it:free`
+- `openrouter/free`
+- `minimax/minimax-m2.5:free`
+- `nvidia/nemotron-3-nano-30b-a3b:free`
+- `google/gemini-2.5-flash-lite` (paid)
+- `google/gemini-2.5-flash` (paid)
+- `google/gemini-2.5-pro` (paid)
+- `google/gemini-exp-1206` (paid)
+- `openrouter/auto`
 
-### Keyboard Shortcuts
+You can also load a custom model ID from saved settings; popup keeps unknown IDs as a custom option.
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+Q` | Toggle assistant |
-| `Ctrl+Shift+E` | Analyze current question |
+## How It Works
 
-### Right-Click Menu
+### Detection and Solving
 
-- Select text on any page, right-click, and choose "AI Solve This Question"
-- Right-click anywhere on page to access assistant options
+- Content script (`content.js`) parses the active page for question text and options.
+- For visual-only options/questions, it can switch to the vision solve path (`solveQuizVision`).
+- For coding questions on Akajob, it uses `solveCodingQuestion` with coding-specific prompt/response handling.
 
-### Supported Sites
+### Prefetch and Caching
 
-Works on any website with quiz or multiple-choice content:
-- skillup.global
-- levelup.akajob.io
-- LinkedIn Learning
-- Coursera, Udemy, edX
-- Google Forms quizzes
-- Any platform with radio buttons or checkboxes
+- Question fingerprints are used for in-session dedupe and cache lookup.
+- Auto-detect can pre-solve high-confidence questions silently.
+- Harvard/Akajob async preload uses message bridge events to discover question sets from network JSON responses.
 
----
+### CSP-Safe Bridge
 
-## Features
+- `page-bridge.js` is declared in `web_accessible_resources` and injected as an external script.
+- Bridge emits question payloads from intercepted `fetch`/`XMLHttpRequest` JSON responses.
+- Bridge also supports coding editor write-back control messages for insert operations.
 
-- AI-powered question analysis using free models (Google Gemma)
-- Smart auto-detection of quiz questions (high confidence only)
-- Stealth mode - hidden by default, activated via shortcuts
-- Auto-hide after configurable delay
-- Works with multiple choice and short answer questions
-- Provides answers with explanations
+## Coding Question Mode
 
----
+When a coding question is detected (Akajob Monaco editor + coding layout):
 
-## Settings
+- Sidebar renders coding result details: approach, complexity, full code, tests, notes.
+- `Insert Logic` inserts only logic block into the template marker region.
+- `Copy Logic` copies logic block for manual paste.
 
-| Setting | Description |
-|---------|-------------|
-| API Key | Your OpenRouter API key |
-| Model | Free AI model selection |
-| Stealth Mode | Hide UI by default (recommended) |
-| Auto-detect | Detect quiz questions and generate one hint per question |
-| Auto-hide delay | Seconds before UI hides automatically |
+### Insert Logic Safety Rules
 
----
-
-## Free Models
-
-| Model ID | Description |
-|----------|-------------|
-| google/gemma-4-26b-a4b-it:free | Google Gemma 4 (26B) - Recommended |
-| google/gemma-4-31b-it:free | Google Gemma 4 (31B) - More powerful |
-| openrouter/free | Auto-select best free model |
-| minimax/minimax-m2.5:free | MiniMax M2.5 |
-| nvidia/nemotron-3-nano-30b-a3b:free | NVIDIA Nemotron Nano |
-
-View all: https://openrouter.ai/models?pricing=free
-
----
+- Requires start marker (for example `//write your Logic here`).
+- Requires end marker (for example output/sample/expected output/test cases comment marker).
+- If end marker is missing, insert is aborted to avoid duplicate code.
+- Wrapper-like logic blocks (`class`, `main`, full function wrappers) are rejected for safety.
 
 ## Project Structure
 
+```text
+manifest.json         Extension manifest and permissions
+background.js         Service worker (OpenRouter calls, model normalization, parsing)
+content.js            Main page logic (detect, sidebar, prefetch, coding insert)
+page-bridge.js        Page-context bridge for CSP-safe network/editor hooks
+popup.html            Settings UI
+popup.js              Settings load/save/test logic
+popup.css             Popup styles
+sidebar.html/js/css   Legacy/extra sidebar assets
+styles.css            Additional style assets
+utils/                Older helper modules
+icons/                Extension icons
 ```
-manifest.json          - Extension configuration
-background.js          - Service worker (API calls, context menus)
-content.js             - Page injection (quiz detection, UI)
-styles.css             - Minimal injected styles
-popup.html/js/css      - Settings popup
-sidebar.html/js/css    - Sidebar panel
-utils/stealth.js       - Anti-detection utilities
-utils/quiz-parser.js   - Quiz format parsing
-utils/ai-service.js    - AI communication utilities
-```
-
----
-
-## Stealth Mode
-
-Enabled by default. Extension UI is completely hidden until activated via keyboard shortcut. Features:
-
-- Shadow DOM isolation - elements hidden from page scanning
-- Random class names - no detectable patterns
-- Focus mode detection - auto-hides during exam mode
-- No global objects or console traces
-- Auto-hide timer - UI disappears after configured delay
-
----
 
 ## Troubleshooting
 
-**Extension icon not showing**: Ensure PNG icons exist in `icons/` folder.
-
-**API key not configured**: Click extension icon and enter OpenRouter API key.
-
-**Quiz not detected**: Navigate to quiz page, select question text, press `Ctrl+Shift+E` to manually trigger.
-
-**API failed**: Verify key is correct, check internet connection, retry (free models have rate limits).
-
----
+- `Failed to communicate with extension` or `context invalidated`:
+  - Refresh the current tab once after extension reload/update.
+- Sidebar does not appear:
+  - Try `Ctrl+Shift+Q` and check shortcuts in browser extension command settings.
+- Wrong/no answer due to parse noise:
+  - Select question + options manually, then press `Ctrl+Shift+E`.
+- Akajob options collapse unexpectedly:
+  - Ensure you are on current build with case-sensitive option dedupe for Akajob parser.
+- Coding insert duplicates or breaks template:
+  - Current logic aborts if no clear end marker is found; add/confirm markers in template comments.
 
 ## Privacy
 
-- API keys stored locally only
-- No analytics or tracking
-- API calls use HTTPS
-- No billing information required
+- API key is stored in browser extension storage.
+- Requests are sent only to OpenRouter endpoints used by the extension.
+- No analytics/tracking module is implemented in this repository.
 
----
+## Development Notes
 
-## License
+- Use `node --check` for fast syntax validation:
 
-MIT License
+```bash
+node --check content.js
+node --check background.js
+node --check page-bridge.js
+```
 
----
+- Reload unpacked extension after code changes.
 
 ## Disclaimer
 
-For educational purposes only. Use responsibly and follow your institution's academic integrity policies.
+For educational use only. Follow your platform/institution policies and academic integrity rules.

@@ -10,6 +10,8 @@
   if (window[marker]) return;
   window[marker] = true;
 
+  const controlSource = `${bridgeSource}-control`;
+
   const emit = (payload) => {
     try {
       window.postMessage({ source: bridgeSource, payload }, '*');
@@ -109,4 +111,93 @@
       return originalSend.apply(this, args);
     };
   }
+
+  const setCodeInMonacoEditor = (nextCode) => {
+    try {
+      const code = String(nextCode || '');
+      if (!code) {
+        return { ok: false, message: 'No code provided.' };
+      }
+
+      const normalize = (text) => String(text || '').replace(/\r\n/g, '\n').trim();
+
+      const readEditorValue = () => {
+        const monacoApi = window.monaco;
+        if (monacoApi && monacoApi.editor && typeof monacoApi.editor.getEditors === 'function') {
+          const editors = monacoApi.editor.getEditors();
+          if (Array.isArray(editors) && editors.length > 0) {
+            const editor = editors[0];
+            const model = typeof editor.getModel === 'function' ? editor.getModel() : null;
+            if (model && typeof model.getValue === 'function') {
+              return String(model.getValue() || '');
+            }
+          }
+        }
+
+        const textarea = document.querySelector('#monaco-editor textarea.inputarea, .monaco-editor textarea.inputarea, textarea.inputarea');
+        return textarea ? String(textarea.value || '') : '';
+      };
+
+      const monacoApi = window.monaco;
+      if (monacoApi && monacoApi.editor && typeof monacoApi.editor.getEditors === 'function') {
+        const editors = monacoApi.editor.getEditors();
+        if (Array.isArray(editors) && editors.length > 0) {
+          const editor = editors[0];
+          const model = typeof editor.getModel === 'function' ? editor.getModel() : null;
+          if (model && typeof model.setValue === 'function') {
+            model.setValue(code);
+            if (typeof editor.focus === 'function') editor.focus();
+            const after = normalize(readEditorValue());
+            const target = normalize(code);
+            if (after === target) {
+              return { ok: true, message: 'Updated via Monaco API.' };
+            }
+            return { ok: false, message: 'Monaco API write did not persist.' };
+          }
+        }
+      }
+
+      const textarea = document.querySelector('#monaco-editor textarea.inputarea, .monaco-editor textarea.inputarea, textarea.inputarea');
+      if (!textarea) {
+        return { ok: false, message: 'Monaco editor input area not found.' };
+      }
+
+      textarea.focus();
+      textarea.value = code;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      textarea.dispatchEvent(new Event('keyup', { bubbles: true }));
+
+      const after = normalize(readEditorValue());
+      const target = normalize(code);
+      if (after === target) {
+        return { ok: true, message: 'Updated via Monaco textarea fallback.' };
+      }
+
+      return { ok: false, message: 'Textarea update did not persist (likely blocked by page handlers).' };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error && error.message ? error.message : 'Failed to update editor.'
+      };
+    }
+  };
+
+  window.addEventListener('message', (event) => {
+    if (!event || event.source !== window) return;
+    const data = event.data;
+    if (!data || data.source !== controlSource) return;
+
+    const payload = data.payload || {};
+    if (payload.type !== 'insertLogic') return;
+
+    const requestId = String(payload.requestId || '');
+    const result = setCodeInMonacoEditor(payload.code);
+    emit({
+      type: 'insertLogicResult',
+      requestId,
+      ok: result.ok === true,
+      message: result.message || ''
+    });
+  }, false);
 })();

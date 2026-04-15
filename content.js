@@ -138,12 +138,15 @@ const Stealth = (function() {
   const akajobBackgroundQueued = new Set();
   const akajobBackgroundSolved = new Set();
   const akajobBackgroundPayloads = new Map();
+  const akajobPendingInsertRequests = new Map();
   let akajobMessageListenerAttached = false;
   const sessionCachedFingerprints = new Set();
   const questionHintCache = new Map();
   const processedQuestionFingerprints = new Map();
   const pendingAutoSolveFingerprints = new Set();
   const prefetchInFlight = new Map();
+  let latestCodingLogicBlock = '';
+  let latestCodingFullCode = '';
   
   // Stealth: Run at document_start, wait for DOM
   if (document.readyState === 'loading') {
@@ -263,6 +266,11 @@ const Stealth = (function() {
         <div class="${Stealth.randomClassName()}" id="sidebar-result" style="display: none; margin-bottom: 16px;">
           <div class="${Stealth.randomClassName()}" id="result-answer" style="background: #e7f3ff; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 16px; font-weight: 600; color: #4a90d9;"></div>
           <div class="${Stealth.randomClassName()}" id="result-explanation" style="background: #fff3cd; padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; color: #856404;"></div>
+          <div class="${Stealth.randomClassName()}" id="coding-actions" style="display: none; gap: 8px; margin-top: 10px;">
+            <button class="${Stealth.randomClassName()}" id="insert-logic-btn" style="flex: 1; padding: 10px; background: #4a90d9; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;">Insert Logic</button>
+            <button class="${Stealth.randomClassName()}" id="copy-logic-btn" style="flex: 1; padding: 10px; background: #5d6670; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;">Copy Logic</button>
+          </div>
+          <div class="${Stealth.randomClassName()}" id="coding-insert-status" style="display: none; margin-top: 8px; font-size: 12px; color: #345;"></div>
         </div>
         <div class="${Stealth.randomClassName()}" id="sidebar-loading" style="display: none; flex-direction: column; align-items: center; padding: 40px 16px;">
           <div style="width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: #4a90d9; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px;"></div>
@@ -282,6 +290,16 @@ const Stealth = (function() {
     const solveBtn = sidebarElement.querySelector('#sidebar-solve-btn');
     if (solveBtn) {
       solveBtn.addEventListener('click', solveCurrentQuestion);
+    }
+
+    const insertLogicBtn = sidebarElement.querySelector('#insert-logic-btn');
+    if (insertLogicBtn) {
+      insertLogicBtn.addEventListener('click', handleInsertLogicClick);
+    }
+
+    const copyLogicBtn = sidebarElement.querySelector('#copy-logic-btn');
+    if (copyLogicBtn) {
+      copyLogicBtn.addEventListener('click', handleCopyLogicClick);
     }
     
     shadow.appendChild(sidebarElement);
@@ -544,7 +562,10 @@ const Stealth = (function() {
     const akajobProgress = getAkaJobQuestionProgress();
     const akajobKey = akajobProgress ? `::ak${akajobProgress.current || 0}of${akajobProgress.total || 0}` : '';
 
-    return `${location.hostname}${location.pathname}${progressKey}${akajobKey}::${normalizedQuestion}::${normalizedOptions}`;
+    const typeKey = question.questionType ? `::type-${question.questionType}` : '';
+    const languageKey = question.questionType === 'coding' ? `::lang-${normalizeText(question.language || '').toLowerCase()}` : '';
+
+    return `${location.hostname}${location.pathname}${progressKey}${akajobKey}${typeKey}${languageKey}::${normalizedQuestion}::${normalizedOptions}`;
   }
 
   async function attemptAutoSolve(question, fingerprint) {
@@ -575,6 +596,9 @@ const Stealth = (function() {
    * Extract question from the DOM
    */
   function extractQuestion() {
+    const akajobCodingQuestion = parseAkaJobCodingQuestion();
+    if (akajobCodingQuestion) return akajobCodingQuestion;
+
     const akajobQuestion = parseAkaJobSkillupQuestion();
     if (akajobQuestion) return akajobQuestion;
 
@@ -644,6 +668,68 @@ const Stealth = (function() {
     }
 
     return bestQuestion;
+  }
+
+  function parseAkaJobCodingQuestion() {
+    if (!isAkaJobSkillupPage()) return null;
+
+    const codingEditor = document.querySelector('#monaco-editor, ngx-monaco-editor, .monaco-editor');
+    if (!codingEditor) return null;
+
+    const questionContainer = document.querySelector('.question-content-container, .task-que-wrap');
+    if (!questionContainer) return null;
+
+    const questionNode = questionContainer.querySelector('.para-small-code, .para-big, p') || questionContainer;
+    const question = normalizeText(questionNode.textContent || '');
+    if (!question || isLikelyNavigationText(question)) return null;
+
+    const language = getAkaJobCodingLanguage();
+    const starterCode = extractAkaJobStarterCode();
+    const progress = getAkaJobQuestionProgress();
+    if (progress) {
+      akajobCurrentQuestionNumber = progress.current;
+      akajobTotalQuestions = progress.total;
+    }
+
+    return {
+      question,
+      options: [],
+      optionElements: [],
+      questionType: 'coding',
+      element: questionContainer.closest('.left.pane') || questionContainer,
+      questionTextElement: questionContainer,
+      source: 'akajob_coding',
+      language,
+      starterCode,
+      codingEditorElement: codingEditor
+    };
+  }
+
+  function getAkaJobCodingLanguage() {
+    const select = document.querySelector('#langChange');
+    if (!select) return 'Java';
+
+    const selectedOption = select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+    const label = normalizeText(selectedOption?.textContent || select.value || 'Java');
+    return label || 'Java';
+  }
+
+  function extractAkaJobStarterCode() {
+    const viewLines = Array.from(document.querySelectorAll('#monaco-editor .view-lines .view-line'));
+    if (viewLines.length > 0) {
+      const lines = viewLines.map((line) => {
+        const text = line.textContent || '';
+        return text.replace(/\u00a0/g, ' ');
+      });
+      const combined = lines.join('\n').trimEnd();
+      if (combined) return combined;
+    }
+
+    const inputArea = document.querySelector('#monaco-editor textarea.inputarea');
+    const inputValue = normalizeText(inputArea?.value || '');
+    if (inputValue) return inputValue;
+
+    return '';
   }
 
   function parseHarvardManageMentorQuestion() {
@@ -727,7 +813,7 @@ const Stealth = (function() {
       }
 
       if (!text || isLikelyNavigationText(text) || isQuestionMetaText(text)) return;
-      const key = text.toLowerCase();
+      const key = text;
       if (seen.has(key)) return;
       seen.add(key);
 
@@ -755,6 +841,7 @@ const Stealth = (function() {
       questionType: hasCheckbox ? 'multiple_select' : 'multiple_choice',
       element: questionContainer.closest('.row') || questionContainer.closest('.que-wrap') || questionContainer,
       questionTextElement: questionContainer,
+      visualOptions: hasVisualContent(questionContainer),
       source: 'akajob_skillup'
     };
   }
@@ -1740,6 +1827,8 @@ const Stealth = (function() {
     if (!settings || !settings.apiKey) return false;
     if (Date.now() < aiRecoveryCooldownUntil) return false;
 
+    if (question && question.questionType === 'coding') return false;
+
     if (!question) return true;
 
     const hasQuestion = !!normalizeText(question.question);
@@ -2064,7 +2153,11 @@ const Stealth = (function() {
       questionEl.innerHTML = `<h4 style="font-size: 12px; color: #666; margin-bottom: 6px;">Question:</h4><p style="font-size: 14px; font-weight: 500;">${escapeHtml(question.question)}</p>`;
     }
     
-    if (optionsEl && question && question.options) {
+    if (optionsEl && question && question.questionType === 'coding') {
+      optionsEl.innerHTML = '<h4 style="font-size: 12px; color: #666; margin-bottom: 8px;">Coding Task:</h4>' +
+        `<div style="padding: 10px 12px; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px; font-size: 13px;">Language: <strong>${escapeHtml(question.language || getAkaJobCodingLanguage())}</strong></div>` +
+        '<div style="padding: 10px 12px; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px; font-size: 13px; color: #555;">This question requires code output, not A/B/C/D option matching.</div>';
+    } else if (optionsEl && question && question.options) {
       optionsEl.innerHTML = '<h4 style="font-size: 12px; color: #666; margin-bottom: 8px;">Options:</h4>' + 
         question.options.map((opt, i) => 
           `<div style="padding: 10px 12px; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px; font-size: 13px;">${String.fromCharCode(65 + i)}. ${escapeHtml(opt)}</div>`
@@ -2269,6 +2362,42 @@ const Stealth = (function() {
     }
     
     try {
+      if (currentQuestion.questionType === 'coding') {
+        const codingResult = await sendRuntimeMessage({
+          action: 'solveCodingQuestion',
+          payload: {
+            question: currentQuestion.question,
+            language: currentQuestion.language || getAkaJobCodingLanguage(),
+            starterCode: currentQuestion.starterCode || extractAkaJobStarterCode()
+          }
+        });
+
+        if (!codingResult) {
+          const message = 'No response from extension background service.';
+          if (!options.silent) showError(message);
+          return { error: message };
+        }
+
+        if (codingResult.error) {
+          if (!options.silent) showError(codingResult.error);
+          return codingResult;
+        }
+
+        if (fingerprint) {
+          questionHintCache.set(fingerprint, {
+            result: codingResult,
+            timestamp: Date.now()
+          });
+          markFingerprintAsCached(fingerprint);
+        }
+
+        if (shouldRenderHintInSidebar(options)) {
+          displayResult(codingResult);
+        }
+
+        return codingResult;
+      }
+
       const useVision = hasVisualOnlyOptions(currentQuestion);
       const imageSources = useVision ? collectQuestionImageSources(currentQuestion) : [];
       const captureRect = useVision ? getCaptureRectForQuestion(currentQuestion) : null;
@@ -2349,12 +2478,22 @@ const Stealth = (function() {
 
   function resolvedQuestionPayload(question) {
     if (!question) return null;
+
+    const normalizedType = question.questionType === 'multiple_select'
+      ? 'multiple_select'
+      : (question.questionType === 'coding' ? 'coding' : 'multiple_choice');
+
     return {
       question: normalizeText(question.question || ''),
       options: Array.isArray(question.options) ? question.options.map(opt => normalizeText(opt)).filter(Boolean) : [],
       optionElements: Array.isArray(question.optionElements) ? question.optionElements : [],
-      questionType: question.questionType === 'multiple_select' ? 'multiple_select' : 'multiple_choice',
-      element: question.element || null
+      questionType: normalizedType,
+      element: question.element || null,
+      source: question.source || '',
+      language: question.language || '',
+      starterCode: question.starterCode || '',
+      questionTextElement: question.questionTextElement || null,
+      codingEditorElement: question.codingEditorElement || null
     };
   }
 
@@ -2371,11 +2510,58 @@ const Stealth = (function() {
     const resultEl = sidebarElement?.querySelector('#sidebar-result');
     const answerEl = sidebarElement?.querySelector('#result-answer');
     const explanationEl = sidebarElement?.querySelector('#result-explanation');
+    const codingActionsEl = sidebarElement?.querySelector('#coding-actions');
+    const insertStatusEl = sidebarElement?.querySelector('#coding-insert-status');
+    const insertBtn = sidebarElement?.querySelector('#insert-logic-btn');
+    const copyBtn = sidebarElement?.querySelector('#copy-logic-btn');
     
     if (!resultEl || !answerEl || !explanationEl) return;
+
+    if (insertStatusEl) {
+      insertStatusEl.style.display = 'none';
+      insertStatusEl.textContent = '';
+      insertStatusEl.style.color = '#345';
+    }
     
+    if (result.mode === 'coding') {
+      latestCodingLogicBlock = String(result.logicBlock || '').trim();
+      latestCodingFullCode = String(result.code || '').trim();
+      answerEl.innerHTML = `<strong>Coding Solution Ready (${escapeHtml(currentQuestion?.language || getAkaJobCodingLanguage())})</strong>`;
+
+      const approach = result.approach ? `<p style="margin: 0 0 8px 0;"><strong>Approach:</strong> ${escapeHtml(result.approach)}</p>` : '';
+      const complexity = `<p style="margin: 0 0 8px 0;"><strong>Time:</strong> ${escapeHtml(result.timeComplexity || 'N/A')} | <strong>Space:</strong> ${escapeHtml(result.spaceComplexity || 'N/A')}</p>`;
+      const codeBlock = `<h5 style="font-size: 13px; margin: 10px 0 6px 0; color: #856404;">Code:</h5><pre style="white-space: pre-wrap; background: #fff; border: 1px solid #e6d99d; border-radius: 6px; padding: 10px; font-size: 12px; line-height: 1.4; max-height: 240px; overflow: auto;">${escapeHtml(result.code || '')}</pre>`;
+      const tests = Array.isArray(result.testCases) && result.testCases.length > 0
+        ? `<h5 style="font-size: 13px; margin: 10px 0 6px 0; color: #856404;">Suggested tests:</h5><ul style="padding-left: 18px; margin: 0;">${result.testCases.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+        : '';
+      const notes = result.notes ? `<p style="margin: 8px 0 0 0;"><strong>Notes:</strong> ${escapeHtml(result.notes)}</p>` : '';
+
+      explanationEl.innerHTML = `${approach}${complexity}${codeBlock}${tests}${notes}`;
+      explanationEl.style.display = 'block';
+
+      if (codingActionsEl) {
+        codingActionsEl.style.display = 'flex';
+      }
+      if (insertBtn) {
+        insertBtn.disabled = !result.logicBlock;
+      }
+      if (copyBtn) {
+        copyBtn.disabled = !result.logicBlock;
+      }
+
+      resultEl.style.display = 'block';
+      return;
+    }
+
+    latestCodingLogicBlock = '';
+    latestCodingFullCode = '';
+
+    if (codingActionsEl) {
+      codingActionsEl.style.display = 'none';
+    }
+
     answerEl.innerHTML = `<strong>Answer: ${result.answer} - ${escapeHtml(result.answerText)}</strong>`;
-    
+
     if (result.explanation && settings.showExplanations) {
       explanationEl.innerHTML = `<h5 style="font-size: 13px; margin-bottom: 8px; color: #856404;">Explanation:</h5><p>${escapeHtml(result.explanation)}</p>`;
       explanationEl.style.display = 'block';
@@ -2385,12 +2571,280 @@ const Stealth = (function() {
     
     resultEl.style.display = 'block';
   }
+
+  async function handleInsertLogicClick() {
+    const insertBtn = sidebarElement?.querySelector('#insert-logic-btn');
+    const logicBlock = String(latestCodingLogicBlock || '').trim();
+
+    if (!logicBlock) {
+      setCodingInsertStatus('No insert-safe logic block available. Try solving again.', true);
+      return;
+    }
+
+    const logicCheck = validateLogicBlockForInsertion(logicBlock);
+    if (!logicCheck.ok) {
+      setCodingInsertStatus(logicCheck.error || 'Logic block is not safe to insert.', true);
+      return;
+    }
+
+    const currentCode = extractAkaJobStarterCode();
+    if (!currentCode) {
+      setCodingInsertStatus('Could not read editor starter code. Click editor once and retry.', true);
+      return;
+    }
+
+    const replacement = replaceLogicRegionInCode(currentCode, logicCheck.logicBlock);
+    if (!replacement.ok) {
+      setCodingInsertStatus(replacement.error || 'Could not find logic placeholder marker.', true);
+      return;
+    }
+
+    if (insertBtn) {
+      insertBtn.disabled = true;
+      insertBtn.textContent = 'Inserting...';
+    }
+
+    try {
+      const writeResult = await applyCodeToAkaJobEditor(replacement.code);
+      if (!writeResult.ok) {
+        setCodingInsertStatus(writeResult.message || 'Failed to insert logic into editor.', true);
+        return;
+      }
+
+      setCodingInsertStatus('Inserted logic into marker region successfully.', false);
+    } catch (error) {
+      setCodingInsertStatus(error?.message || 'Failed to insert logic into editor.', true);
+    } finally {
+      if (insertBtn) {
+        insertBtn.disabled = false;
+        insertBtn.textContent = 'Insert Logic';
+      }
+    }
+  }
+
+  async function handleCopyLogicClick() {
+    const logicBlock = String(latestCodingLogicBlock || '').trim();
+    if (!logicBlock) {
+      setCodingInsertStatus('No logic block available to copy.', true);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(logicBlock);
+      setCodingInsertStatus('Logic block copied. If Ctrl+V is blocked by the test site, use Insert Logic.', false);
+    } catch (_) {
+      const fallback = document.createElement('textarea');
+      fallback.value = logicBlock;
+      fallback.style.position = 'fixed';
+      fallback.style.opacity = '0';
+      document.body.appendChild(fallback);
+      fallback.focus();
+      fallback.select();
+      const copied = document.execCommand('copy');
+      fallback.remove();
+      if (copied) {
+        setCodingInsertStatus('Logic block copied. If Ctrl+V is blocked by the test site, use Insert Logic.', false);
+      } else {
+        setCodingInsertStatus('Copy failed. Select code manually from the sidebar.', true);
+      }
+    }
+  }
+
+  function setCodingInsertStatus(message, isError) {
+    const statusEl = sidebarElement?.querySelector('#coding-insert-status');
+    if (!statusEl) return;
+
+    statusEl.textContent = String(message || '').trim();
+    statusEl.style.display = statusEl.textContent ? 'block' : 'none';
+    statusEl.style.color = isError ? '#b42318' : '#345';
+  }
+
+  function replaceLogicRegionInCode(sourceCode, logicBlock) {
+    const source = String(sourceCode || '').replace(/\r\n/g, '\n');
+    const logic = String(logicBlock || '').replace(/\r\n/g, '\n').trim();
+    if (!source || !logic) {
+      return { ok: false, error: 'Missing source or logic block.' };
+    }
+
+    const lines = source.split('\n');
+    const startIndex = lines.findIndex((line) => isLogicStartMarker(line));
+    if (startIndex < 0) {
+      return {
+        ok: false,
+        error: 'Could not find logic marker (for example: //write your Logic here).'
+      };
+    }
+
+    const endIndex = findLogicEndBoundary(lines, startIndex + 1);
+    if (endIndex < 0) {
+      return {
+        ok: false,
+        error: 'End marker not found after logic marker. Insert aborted to avoid duplicate code.'
+      };
+    }
+
+    const baseIndent = String(lines[startIndex] || '').match(/^\s*/)?.[0] || '';
+    const normalizedLogicLines = normalizeLogicLines(logic, baseIndent);
+
+    const output = [];
+    output.push(...lines.slice(0, startIndex + 1));
+    output.push(...normalizedLogicLines);
+    output.push(...lines.slice(endIndex));
+    return { ok: true, code: output.join('\n'), replaced: true };
+  }
+
+  function isLogicStartMarker(line) {
+    const value = String(line || '').toLowerCase();
+    return /write\s*your\s*logic\s*here/.test(value) ||
+      /implement\s+logic\s+here/.test(value) ||
+      /your\s+logic\s+here/.test(value) ||
+      /start\s+logic/.test(value) ||
+      /begin\s+logic/.test(value);
+  }
+
+  function findLogicEndBoundary(lines, fromIndex) {
+    for (let index = fromIndex; index < lines.length; index += 1) {
+      const value = String(lines[index] || '').toLowerCase();
+      if (/^\s*(\/\/|\/\*+|\*|#)\s*output\b/.test(value)) return index;
+      if (/^\s*(\/\/|\/\*+|\*|#)\s*sample\s*(input|output)\b/.test(value)) return index;
+      if (/^\s*(\/\/|\/\*+|\*|#)\s*expected\s*output\b/.test(value)) return index;
+      if (/^\s*(\/\/|\/\*+|\*|#)\s*test\s*cases?\b/.test(value)) return index;
+    }
+    return -1;
+  }
+
+  function validateLogicBlockForInsertion(logicBlock) {
+    const logic = String(logicBlock || '').replace(/\r\n/g, '\n').trim();
+    if (!logic) {
+      return { ok: false, logicBlock: '', error: 'Empty logic block.' };
+    }
+
+    const hasClassWrapper = /(^|\n)\s*(public\s+)?class\s+[A-Za-z_][\w]*/.test(logic);
+    const hasMainWrapper = /(^|\n)\s*(public\s+)?static\s+void\s+main\s*\(/.test(logic);
+    const hasFunctionWrapper = /(^|\n)\s*(function\s+[A-Za-z_$][\w$]*\s*\(|const\s+[A-Za-z_$][\w$]*\s*=\s*\([^)]*\)\s*=>)/.test(logic);
+
+    if (hasClassWrapper || hasMainWrapper || hasFunctionWrapper) {
+      return {
+        ok: false,
+        logicBlock: '',
+        error: 'Model returned a full wrapper (class/function/main). Re-solve and use a logic-only block.'
+      };
+    }
+
+    return { ok: true, logicBlock: logic, error: '' };
+  }
+
+  function normalizeLogicLines(logic, baseIndent) {
+    const rawLines = String(logic || '').split('\n');
+    const nonEmpty = rawLines.filter((line) => line.trim().length > 0);
+    let commonIndent = Infinity;
+
+    nonEmpty.forEach((line) => {
+      const indentLength = (line.match(/^\s*/) || [''])[0].length;
+      if (indentLength < commonIndent) {
+        commonIndent = indentLength;
+      }
+    });
+
+    if (!Number.isFinite(commonIndent)) {
+      commonIndent = 0;
+    }
+
+    const adjusted = rawLines.map((line) => {
+      if (!line.trim()) return '';
+      const dedented = line.slice(Math.min(commonIndent, line.length));
+      return `${baseIndent}${dedented}`;
+    });
+
+    while (adjusted.length > 0 && !adjusted[0].trim()) adjusted.shift();
+    while (adjusted.length > 0 && !adjusted[adjusted.length - 1].trim()) adjusted.pop();
+
+    return adjusted.length > 0 ? adjusted : [baseIndent + logic.trim()];
+  }
+
+  async function applyCodeToAkaJobEditor(nextCode) {
+    const bridgeWrite = await applyCodeViaAkaJobBridge(nextCode);
+    if (bridgeWrite.ok) {
+      return bridgeWrite;
+    }
+
+    return applyCodeViaTextarea(nextCode);
+  }
+
+  function applyCodeViaAkaJobBridge(nextCode) {
+    return new Promise((resolve) => {
+      if (!isAkaJobSkillupPage()) {
+        resolve({ ok: false, message: 'Not on Akajob coding page.' });
+        return;
+      }
+
+      injectAkaJobFetchBridge();
+
+      const requestId = `insert-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const timer = setTimeout(() => {
+        const pending = akajobPendingInsertRequests.get(requestId);
+        if (pending) {
+          akajobPendingInsertRequests.delete(requestId);
+          pending.resolve({ ok: false, message: 'Editor bridge timed out.' });
+        }
+      }, 1800);
+
+      akajobPendingInsertRequests.set(requestId, {
+        resolve,
+        timer
+      });
+
+      window.postMessage({
+        source: 'ai-translator-akajob-bridge-control',
+        payload: {
+          type: 'insertLogic',
+          requestId,
+          code: String(nextCode || '')
+        }
+      }, '*');
+    });
+  }
+
+  function applyCodeViaTextarea(nextCode) {
+    try {
+      const textarea = document.querySelector('#monaco-editor textarea.inputarea, .monaco-editor textarea.inputarea, textarea.inputarea');
+      if (!textarea) {
+        return { ok: false, message: 'Could not find Monaco input textarea.' };
+      }
+
+      const before = normalizeEditorCodeForCompare(extractAkaJobStarterCode());
+      const value = String(nextCode || '');
+      textarea.focus();
+      textarea.value = value;
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: value }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      textarea.dispatchEvent(new Event('keyup', { bubbles: true }));
+
+      const after = normalizeEditorCodeForCompare(extractAkaJobStarterCode());
+      const target = normalizeEditorCodeForCompare(value);
+      if (after && target && after === target && after !== before) {
+        return { ok: true, message: 'Editor updated via textarea fallback.' };
+      }
+
+      return {
+        ok: false,
+        message: 'Editor blocked direct paste/update events. Try Insert Logic bridge path or click editor and retry.'
+      };
+    } catch (error) {
+      return { ok: false, message: error?.message || 'Textarea fallback failed.' };
+    }
+  }
+
+  function normalizeEditorCodeForCompare(code) {
+    return String(code || '').replace(/\r\n/g, '\n').trim();
+  }
   
   /**
    * Highlight the correct option on the page
    */
   function highlightCorrectOption(answerLetter) {
     if (!currentQuestion || !answerLetter || settings.stealthMode) return;
+    if (currentQuestion.questionType === 'coding') return;
     
     const index = answerLetter.charCodeAt(0) - 65;
     
@@ -2700,7 +3154,7 @@ const Stealth = (function() {
   }
 
   function updateAkaJobProgressFromQuestion(question) {
-    if (!question || question.source !== 'akajob_skillup') return;
+    if (!question || (question.source !== 'akajob_skillup' && question.source !== 'akajob_coding')) return;
 
     const progress = getAkaJobQuestionProgress();
     if (!progress) return;
@@ -2749,10 +3203,28 @@ const Stealth = (function() {
   function onAkaJobBridgeMessage(event) {
     if (!event || event.source !== window) return;
     const data = event.data;
-    if (!data || data.source !== 'ai-translator-akajob-bridge') return;
+    if (!data || (data.source !== 'ai-translator-akajob-bridge' && data.source !== 'ai-translator-akajob-bridge-control')) return;
 
     const payload = data.payload;
-    if (!payload || payload.type !== 'questions') return;
+    if (!payload) return;
+
+    if (payload.type === 'insertLogicResult') {
+      const requestId = String(payload.requestId || '');
+      if (!requestId) return;
+
+      const pending = akajobPendingInsertRequests.get(requestId);
+      if (!pending) return;
+
+      clearTimeout(pending.timer);
+      akajobPendingInsertRequests.delete(requestId);
+      pending.resolve({
+        ok: payload.ok === true,
+        message: String(payload.message || '')
+      });
+      return;
+    }
+
+    if (payload.type !== 'questions') return;
 
     enqueueAkaJobBackgroundQuestions(payload.questions || []);
   }
@@ -3032,7 +3504,7 @@ const Stealth = (function() {
       updateProgressBadge();
     }
 
-    const question = parseAkaJobSkillupQuestion();
+    const question = parseAkaJobCodingQuestion() || parseAkaJobSkillupQuestion();
     if (!question) return;
 
     const fingerprint = getQuestionFingerprint(question);
@@ -3373,6 +3845,7 @@ const Stealth = (function() {
     function addUrl(url) {
       const normalized = normalizeText(url);
       if (!normalized || seen.has(normalized)) return;
+      if (shouldSkipLikelyIconUrl(normalized)) return;
       seen.add(normalized);
       images.push({ url: normalized });
     }
@@ -3409,15 +3882,36 @@ const Stealth = (function() {
     return images.slice(0, 6);
   }
 
+  function shouldSkipLikelyIconUrl(url) {
+    const normalized = String(url || '').toLowerCase();
+    if (!normalized) return true;
+
+    return normalized.includes('/assets/images/test-started/') ||
+      normalized.includes('/assets/images/q-menu/') ||
+      normalized.includes('/assets/images/timer/') ||
+      normalized.includes('/assets/images/webcam/') ||
+      normalized.includes('report-problem') ||
+      normalized.includes('mark-for-review') ||
+      normalized.includes('filter.svg') ||
+      normalized.includes('icon_') ||
+      normalized.includes('icon-') ||
+      normalized.includes('logo') ||
+      normalized.endsWith('.svg');
+  }
+
   function hasVisualOnlyOptions(question) {
     if (!question || !Array.isArray(question.options)) return false;
+
+    if (question.questionType === 'coding') return false;
     if (question.options.length < 2) return false;
 
     if (question.source === 'akajob_skillup') {
-      return Array.isArray(question.optionElements) && question.optionElements.some((el) => {
+      const hasVisualInQuestion = !!(question.questionTextElement && hasVisualContent(question.questionTextElement));
+      const hasVisualInOptions = Array.isArray(question.optionElements) && question.optionElements.some((el) => {
         if (!el || typeof el.querySelector !== 'function') return false;
         return !!el.querySelector('img, svg, canvas, table');
       });
+      return hasVisualInQuestion || hasVisualInOptions;
     }
 
     if (question.visualOptions) return true;

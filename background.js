@@ -117,6 +117,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Keep message channel open for async response
   }
 
+  if (request.action === 'solveCodingQuestion') {
+    handleCodingQuestion(request.payload)
+      .then(sendResponse)
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+
   if (request.action === 'parseQuestionFromDOM') {
     handleParseQuestionFromDOM(request.snapshot, request.hintQuestion, request.hintOptions)
       .then(sendResponse)
@@ -181,6 +188,22 @@ async function handleQuizQuestion(question, options, questionType = 'multiple_ch
 
   return callOpenRouterAPI(settings.apiKey, prompt, selectedModel, parseAIResponse, {
     allowVision: false
+  });
+}
+
+async function handleCodingQuestion(payload) {
+  const settings = await getSettings();
+
+  if (!settings.apiKey) {
+    throw new Error('API key not configured. Please set your OpenRouter API key in extension settings.');
+  }
+
+  const prompt = buildCodingPrompt(payload);
+  const selectedModel = normalizePreferredModel(settings.model);
+  return callOpenRouterAPI(settings.apiKey, prompt, selectedModel, parseCodingResponse, {
+    allowVision: false,
+    temperature: 0.2,
+    maxTokens: 1400
   });
 }
 
@@ -311,6 +334,54 @@ Do not include any other text. Only return valid JSON.`;
   return prompt;
 }
 
+function buildCodingPrompt(payload) {
+  const question = String(payload?.question || '').trim();
+  const language = normalizeCodingLanguage(payload?.language);
+  const starterCode = String(payload?.starterCode || '').trim();
+
+  let prompt = 'You are an expert coding interview assistant.\n';
+  prompt += 'Solve the coding problem and return ONLY valid JSON.\n\n';
+  prompt += `Preferred Language: ${language}\n\n`;
+  prompt += `Problem:\n${question}\n\n`;
+
+  if (starterCode) {
+    prompt += `Starter code (if any):\n${starterCode}\n\n`;
+  }
+
+  prompt += 'Respond in this exact JSON format:\n';
+  prompt += '{\n';
+  prompt += '  "approach": "short explanation",\n';
+  prompt += '  "timeComplexity": "O(...)" ,\n';
+  prompt += '  "spaceComplexity": "O(...)" ,\n';
+  prompt += '  "logicBlock": "only the statements to place after //write your Logic here (no full class/function wrapper)",\n';
+  prompt += '  "code": "full solution code",\n';
+  prompt += '  "testCases": ["input -> output", "..."],\n';
+  prompt += '  "notes": "important implementation notes"\n';
+  prompt += '}\n\n';
+  prompt += 'Rules:\n';
+  prompt += '- Use only the requested language.\n';
+  prompt += '- Code must compile/run for standard online judge style input-output.\n';
+  prompt += '- logicBlock must be insert-safe and should not contain full class/function wrappers when avoidable.\n';
+  prompt += '- Keep explanation concise and practical.\n';
+  prompt += '- Do not include markdown fences. JSON only.\n';
+
+  return prompt;
+}
+
+function normalizeCodingLanguage(language) {
+  const value = String(language || '').toLowerCase();
+  if (!value) return 'Java';
+
+  if (value.includes('javascript') || value === 'js' || value.includes('node')) return 'JavaScript';
+  if (value.includes('java')) return 'Java';
+  if (value.includes('python')) return 'Python';
+  if (value.includes('c++') || value.includes('cpp')) return 'C++';
+  if (value.includes('c#') || value.includes('csharp')) return 'C#';
+  if (value === 'c') return 'C';
+
+  return language;
+}
+
 function buildDOMParsePrompt(snapshot, hintQuestion, hintOptions) {
   let prompt = 'You extract quiz question and options from noisy webpage text.\n';
   prompt += 'Return only valid JSON. Do not include markdown or explanation.\n\n';
@@ -370,6 +441,11 @@ function buildVisionMessages(payload, capturedImage = '') {
     });
     prompt += '\n';
   }
+
+  prompt += 'Important instructions:\n';
+  prompt += '- Read chart/table data directly from image if present.\n';
+  prompt += '- If options are entities (like M, N, P, Q, R), choose based on the image data and map to option letter.\n';
+  prompt += '- Never answer with uncertainty. Choose the best supported option from provided choices.\n\n';
 
   prompt += 'Return exact JSON:\n';
   prompt += '{\n';
@@ -623,6 +699,11 @@ function parseAIResponse(content) {
     }
     throw new Error('No JSON found in response');
   } catch (e) {
+    const repaired = repairUnstructuredAnswerToJson(safeContent);
+    if (repaired) {
+      return repaired;
+    }
+
     // Fallback: try to extract answer from text
     return {
       answer: '',
@@ -630,6 +711,86 @@ function parseAIResponse(content) {
       explanation: 'Could not parse structured response. Raw AI output shown above.'
     };
   }
+}
+
+function parseCodingResponse(content) {
+  const safeContent = typeof content === 'string' ? content : String(content || '');
+
+  try {
+    const jsonMatch = safeContent.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON in coding response');
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      mode: 'coding',
+      approach: String(parsed.approach || '').trim(),
+      timeComplexity: String(parsed.timeComplexity || '').trim(),
+      spaceComplexity: String(parsed.spaceComplexity || '').trim(),
+      logicBlock: normalizeLogicBlockFromModel(parsed.logicBlock, parsed.code),
+      code: String(parsed.code || '').trim(),
+      testCases: Array.isArray(parsed.testCases)
+        ? parsed.testCases.map((item) => String(item || '').trim()).filter(Boolean)
+        : [],
+      notes: String(parsed.notes || '').trim()
+    };
+  } catch (error) {
+    return {
+      mode: 'coding',
+      approach: 'Could not parse structured coding response.',
+      timeComplexity: '',
+      spaceComplexity: '',
+      logicBlock: '',
+      code: safeContent,
+      testCases: [],
+      notes: 'Raw model output shown in code block.'
+    };
+  }
+}
+
+function normalizeLogicBlockFromModel(logicBlock, code) {
+  const normalizedLogic = stripCodeFences(String(logicBlock || '').trim());
+  if (normalizedLogic) return normalizedLogic;
+
+  const normalizedCode = stripCodeFences(String(code || '').trim());
+  if (!normalizedCode) return '';
+
+  // Avoid inserting full wrappers into template by default.
+  if (/\bclass\s+\w+/.test(normalizedCode) || /\bpublic\s+static\s+void\s+main\b/.test(normalizedCode)) {
+    return '';
+  }
+
+  return normalizedCode;
+}
+
+function stripCodeFences(text) {
+  let value = String(text || '').trim();
+  if (!value) return '';
+
+  if (value.startsWith('```')) {
+    value = value.replace(/^```[a-zA-Z0-9_\-]*\s*/,'');
+    value = value.replace(/```$/,'').trim();
+  }
+
+  return value;
+}
+
+function repairUnstructuredAnswerToJson(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+
+  const letterMatch = raw.match(/\banswer\s*[:\-]?\s*([A-H])\b/i) || raw.match(/\b([A-H])\b/);
+  const letter = letterMatch ? String(letterMatch[1] || '').toUpperCase() : '';
+  if (!letter) return null;
+
+  const lines = raw.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const answerLine = lines.find((line) => /answer/i.test(line)) || lines[0] || '';
+  const explanationLine = lines.find((line) => /because|since|therefore|hence|profit|maximum|minimum|chart|graph|table/i.test(line)) || raw;
+
+  return {
+    answer: letter,
+    answerText: answerLine.length > 240 ? answerLine.slice(0, 240) : answerLine,
+    explanation: explanationLine.length > 1200 ? explanationLine.slice(0, 1200) : explanationLine
+  };
 }
 
 function parseQuestionExtractionResponse(content) {
