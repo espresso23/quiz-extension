@@ -2,24 +2,21 @@
 
 // Default settings
 const DEFAULT_SETTINGS = {
-  apiKey: '',
-  model: 'google/gemma-4-26b-a4b-it:free', // Default model via OpenRouter
-  autoDetect: true, // Smart auto-detect enabled by default
+  aiProvider: 'openrouter', // 'openrouter' or 'gemini'
+  apiKey: '', // OpenRouter API Key
+  geminiApiKey: '', // Google Gemini API Key
+  model: 'google/gemma-4-26b-a4b-it:free', // Default model
+  autoDetect: true,
   showExplanations: true,
-  stealthMode: true, // Enabled by default
-  autoHideDelay: 8000 // Auto-hide after 8 seconds
+  stealthMode: true,
+  autoHideDelay: 8000
 };
 
 const MODEL_CATALOG = [
-  'google/gemma-4-26b-a4b-it:free',
-  'google/gemma-4-31b-it:free',
-  'openrouter/free',
-  'minimax/minimax-m2.5:free',
-  'nvidia/nemotron-3-nano-30b-a3b:free',
-  'google/gemini-2.5-flash-lite',
-  'google/gemini-2.5-flash',
-  'google/gemini-2.5-pro',
+  'google/gemini-2.0-pro-exp-02-05',
+  'google/gemini-2.0-flash',
   'google/gemini-exp-1206',
+  'google/gemma-4-31b-it:free',
   'openrouter/auto'
 ];
 
@@ -174,33 +171,130 @@ chrome.commands.onCommand.addListener(async (command) => {
 // Open popup on action click (default behavior)
 
 /**
+ * Generic AI call dispatcher
+ */
+async function callAI(prompt, responseParser = parseAIResponse, requestOptions = {}) {
+  const settings = await getSettings();
+  const provider = settings.aiProvider || 'openrouter';
+  const selectedModel = requestOptions.model || normalizePreferredModel(settings.model);
+
+  if (provider === 'gemini') {
+    if (!settings.geminiApiKey) {
+      throw new Error('Gemini API key not configured. Please set your Gemini API key in extension settings.');
+    }
+    return callGeminiAPI(settings.geminiApiKey, prompt, selectedModel, responseParser, requestOptions);
+  } else {
+    if (!settings.apiKey) {
+      throw new Error('API key not configured. Please set your OpenRouter API key in extension settings.');
+    }
+    return callOpenRouterAPI(settings.apiKey, prompt, selectedModel, responseParser, requestOptions);
+  }
+}
+
+/**
+ * Call Google Gemini API directly
+ */
+async function callGeminiAPI(apiKey, prompt, model, responseParser = parseAIResponse, requestOptions = {}) {
+  // Map models if needed
+  let geminiModel = model;
+  if (geminiModel.includes('/')) {
+    // If it's an OpenRouter style model name, try to extract the base name
+    geminiModel = geminiModel.split('/').pop();
+  }
+  
+  // Ensure it's a valid Gemini model name for the API
+  if (!geminiModel.startsWith('gemini-')) {
+    geminiModel = 'gemini-2.0-flash'; // Secure fallback
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
+  
+  const contents = [];
+  const userParts = [];
+
+  if (requestOptions.image) {
+    const base64Data = requestOptions.image.split(',')[1] || requestOptions.image;
+    userParts.push({
+      inline_data: {
+        mime_type: 'image/png',
+        data: base64Data
+      }
+    });
+  }
+
+  if (prompt) {
+    userParts.push({ text: prompt });
+  } else if (requestOptions.customMessages) {
+    // Convert OpenRouter messages to Gemini parts if possible
+    const lastUserMsg = requestOptions.customMessages.findLast(m => m.role === 'user');
+    if (lastUserMsg) {
+      if (typeof lastUserMsg.content === 'string') {
+        userParts.push({ text: lastUserMsg.content });
+      } else if (Array.isArray(lastUserMsg.content)) {
+        for (const part of lastUserMsg.content) {
+          if (part.type === 'text') {
+            userParts.push({ text: part.text });
+          } else if (part.type === 'image_url') {
+            const imgData = part.image_url.url;
+            const base64 = imgData.split(',')[1] || imgData;
+            userParts.push({
+              inline_data: {
+                mime_type: 'image/png',
+                data: base64
+              }
+            });
+          }
+        }
+      }
+    }
+  }
+
+  contents.push({
+    role: 'user',
+    parts: userParts
+  });
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents,
+      generationConfig: {
+        temperature: requestOptions.temperature || 0.3,
+        maxOutputTokens: requestOptions.maxTokens || 1000,
+        response_mime_type: 'application/json'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
+    throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+  if (!content) {
+    throw new Error('Gemini API returned empty response content');
+  }
+
+  return responseParser(content);
+}
+
+/**
  * Main function to solve quiz question using AI via OpenRouter
  */
 async function handleQuizQuestion(question, options, questionType = 'multiple_choice') {
-  const settings = await getSettings();
-  
-  if (!settings.apiKey) {
-    throw new Error('API key not configured. Please set your OpenRouter API key in extension settings.');
-  }
-  
   const prompt = buildPrompt(question, options, questionType);
-  const selectedModel = normalizePreferredModel(settings.model);
-
-  return callOpenRouterAPI(settings.apiKey, prompt, selectedModel, parseAIResponse, {
-    allowVision: false
-  });
+  return callAI(prompt, parseAIResponse, { allowVision: false });
 }
 
 async function handleCodingQuestion(payload) {
-  const settings = await getSettings();
-
-  if (!settings.apiKey) {
-    throw new Error('API key not configured. Please set your OpenRouter API key in extension settings.');
-  }
-
   const prompt = buildCodingPrompt(payload);
-  const selectedModel = normalizePreferredModel(settings.model);
-  return callOpenRouterAPI(settings.apiKey, prompt, selectedModel, parseCodingResponse, {
+  return callAI(prompt, parseCodingResponse, {
     allowVision: false,
     temperature: 0.2,
     maxTokens: 1400
@@ -208,23 +302,14 @@ async function handleCodingQuestion(payload) {
 }
 
 async function handleVisionQuizQuestion(payload, sender) {
-  const settings = await getSettings();
-
-  if (!settings.apiKey) {
-    throw new Error('API key not configured. Please set your OpenRouter API key in extension settings.');
-  }
-
-  const visionModel = pickVisionModel(normalizePreferredModel(settings.model));
-  const visionFallbackModels = buildVisionFallbackModels(visionModel);
   const capturedImage = await captureQuizRegionImage(payload, sender);
-  const messages = buildVisionMessages(payload, capturedImage);
+  const prompt = payload?.question || 'Analyze this quiz question and provide the correct answer.';
 
-  return callOpenRouterAPI(settings.apiKey, '', visionModel, parseAIResponse, {
-    customMessages: messages,
-    fallbackModels: visionFallbackModels,
-    allowVision: true,
+  return callAI(prompt, parseAIResponse, {
+    image: capturedImage,
     temperature: 0.1,
-    maxTokens: 700
+    maxTokens: 700,
+    allowVision: true
   });
 }
 
@@ -296,14 +381,14 @@ function blobToDataUrl(blob) {
 
 async function handleParseQuestionFromDOM(snapshot, hintQuestion = '', hintOptions = []) {
   const settings = await getSettings();
-
-  if (!settings.apiKey) {
-    throw new Error('API key not configured. Please set your OpenRouter API key in extension settings.');
-  }
-
   const prompt = buildDOMParsePrompt(snapshot, hintQuestion, hintOptions);
-  const parseModel = normalizePreferredModel(settings.model || 'google/gemma-4-26b-a4b-it:free');
-  return callOpenRouterAPI(settings.apiKey, prompt, parseModel, parseQuestionExtractionResponse);
+  
+  // Use a fast model for parsing if using OpenRouter, or stick to user preference if it's gemini
+  let parseModel = normalizePreferredModel(settings.model || 'google/gemma-4-26b-a4b-it:free');
+  
+  return callAI(prompt, parseQuestionExtractionResponse, {
+    model: settings.aiProvider === 'openrouter' ? 'google/gemma-4-26b-a4b-it:free' : parseModel
+  });
 }
 
 /**
@@ -531,15 +616,14 @@ function normalizePreferredModel(model) {
 /**
  * Call OpenRouter API (supports all models including free Gemini)
  */
-async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemma-4-26b-a4b-it:free', responseParser = parseAIResponse, requestOptions = {}) {
+async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemini-2.5-flash', responseParser = parseAIResponse, requestOptions = {}) {
   const fallbackModels = Array.isArray(requestOptions.fallbackModels) && requestOptions.fallbackModels.length > 0
     ? requestOptions.fallbackModels
     : [
-        'openrouter/free',
-        'google/gemma-4-26b-a4b-it:free',
-        'google/gemma-4-31b-it:free',
-        'minimax/minimax-m2.5:free',
-        'nvidia/nemotron-3-nano-30b-a3b:free'
+        'google/gemini-2.5-flash',
+        'google/gemini-2.5-pro',
+        'google/gemini-exp-1206',
+        'google/gemma-4-31b-it:free'
       ];
 
   const triedModels = new Set();
@@ -549,12 +633,27 @@ async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemma-4-26b-a4b
 async function callOpenRouterAPIWithFallback(apiKey, prompt, model, fallbackModels, triedModels, responseParser, requestOptions = {}) {
   triedModels.add(model);
 
-  const messages = Array.isArray(requestOptions.customMessages) && requestOptions.customMessages.length > 0
-    ? requestOptions.customMessages
-    : [
+  let messages = requestOptions.customMessages;
+  
+  if (!messages) {
+    if (requestOptions.image) {
+      // Direct vision support for OpenRouter path
+      messages = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt || 'Analyze this quiz question and provide the correct answer.' },
+            { type: 'image_url', image_url: { url: requestOptions.image } }
+          ]
+        }
+      ];
+    } else {
+      messages = [
         { role: 'system', content: 'You are a helpful quiz assistant. Always respond with valid JSON.' },
         { role: 'user', content: prompt }
       ];
+    }
+  }
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',

@@ -52,27 +52,45 @@ class QuizParser {
   }
   
   /**
+   * Helper to get text from an element, falling back to image alt text
+   */
+  getElementText(el) {
+    if (!el) return '';
+    let text = el.textContent.trim();
+
+    // If text is empty, check for images with alt text
+    if (!text) {
+      const img = el.querySelector('img');
+      if (img && img.alt) {
+        text = `[Image: ${img.alt}]`;
+      }
+    }
+
+    return text;
+  }
+
+  /**
    * Parse radio button group
    */
   parseRadioGroup(container) {
     const radios = container.querySelectorAll('input[type="radio"]');
     if (radios.length < 2) return null;
-    
+
     const options = [];
     const optionElements = [];
-    
+
     radios.forEach(radio => {
       const label = this.findLabelForInput(radio);
       if (label) {
-        options.push(label.textContent.trim());
+        options.push(this.getElementText(label));
         optionElements.push(label);
       }
     });
-    
+
     if (options.length === 0) return null;
-    
+
     const question = this.extractQuestionText(container, radios[0]);
-    
+
     return {
       question,
       options,
@@ -81,29 +99,29 @@ class QuizParser {
       allowMultiple: false
     };
   }
-  
+
   /**
    * Parse checkbox group (multiple correct answers possible)
    */
   parseCheckboxGroup(container) {
     const checkboxes = container.querySelectorAll('input[type="checkbox"]');
     if (checkboxes.length < 2) return null;
-    
+
     const options = [];
     const optionElements = [];
-    
+
     checkboxes.forEach(checkbox => {
       const label = this.findLabelForInput(checkbox);
       if (label) {
-        options.push(label.textContent.trim());
+        options.push(this.getElementText(label));
         optionElements.push(label);
       }
     });
-    
+
     if (options.length === 0) return null;
-    
+
     const question = this.extractQuestionText(container, checkboxes[0]);
-    
+
     return {
       question,
       options,
@@ -111,8 +129,7 @@ class QuizParser {
       questionType: 'multiple_select',
       allowMultiple: true
     };
-  }
-  
+  }  
   /**
    * Parse list-based options
    */

@@ -21,8 +21,13 @@ function setupEventListeners() {
 async function loadSettings() {
   try {
     const settings = await requestFromBackground({ action: 'getSettings' });
-    if (settings && !settings.apiKey) {
-      showStatus('⚠️ API key not configured. Click ⚙️ to set up.');
+    if (settings) {
+      const provider = settings.aiProvider || 'openrouter';
+      const hasKey = provider === 'gemini' ? !!settings.geminiApiKey : !!settings.apiKey;
+      
+      if (!hasKey) {
+        showStatus('⚠️ API key not configured. Click ⚙️ to set up.');
+      }
     }
   } catch (err) {
     console.error('Failed to load settings:', err);

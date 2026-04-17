@@ -159,7 +159,9 @@ const Stealth = (function() {
     // Load settings
     const savedSettings = await requestSettings();
     settings = {
+      aiProvider: savedSettings?.aiProvider || 'openrouter',
       apiKey: savedSettings?.apiKey || '',
+      geminiApiKey: savedSettings?.geminiApiKey || '',
       model: savedSettings?.model || 'google/gemma-4-26b-a4b-it:free',
       autoDetect: savedSettings?.autoDetect !== false,
       showExplanations: savedSettings?.showExplanations !== false,
@@ -438,6 +440,9 @@ const Stealth = (function() {
       settings = {
         ...settings,
         ...next,
+        aiProvider: next.aiProvider || settings.aiProvider || 'openrouter',
+        apiKey: next.apiKey !== undefined ? next.apiKey : settings.apiKey,
+        geminiApiKey: next.geminiApiKey !== undefined ? next.geminiApiKey : settings.geminiApiKey,
         autoDetect: next.autoDetect !== false,
         showExplanations: next.showExplanations !== false,
         stealthMode: next.stealthMode !== false,
@@ -460,6 +465,12 @@ const Stealth = (function() {
         scheduleAutoDetectScan(500);
       }
     });
+  }
+
+  function hasValidApiKey() {
+    if (!settings) return false;
+    if (settings.aiProvider === 'gemini') return !!settings.geminiApiKey;
+    return !!settings.apiKey;
   }
 
   function scheduleAutoDetectScan(delay = 700) {
@@ -490,7 +501,7 @@ const Stealth = (function() {
       return;
     }
 
-    if (!settings.apiKey) {
+    if (!hasValidApiKey()) {
       processedQuestionFingerprints.set(fingerprint, Date.now());
       return;
     }
@@ -1824,7 +1835,7 @@ const Stealth = (function() {
   }
 
   function shouldAttemptAIFallback(question) {
-    if (!settings || !settings.apiKey) return false;
+    if (!hasValidApiKey()) return false;
     if (Date.now() < aiRecoveryCooldownUntil) return false;
 
     if (question && question.questionType === 'coding') return false;
@@ -1842,7 +1853,7 @@ const Stealth = (function() {
   }
 
   async function recoverQuestionWithAIFallback(question) {
-    if (!settings || !settings.apiKey) return null;
+    if (!hasValidApiKey()) return null;
     if (extensionContextLost) return null;
 
     aiRecoveryCooldownUntil = Date.now() + 5000;
@@ -3107,7 +3118,7 @@ const Stealth = (function() {
   async function runAkaJobPrefetch() {
     if (!isAkaJobSkillupPage()) return;
     if (extensionContextLost) return;
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
     if (akajobPrefetchRunning) return;
 
     const question = parseAkaJobSkillupQuestion();
@@ -3231,7 +3242,7 @@ const Stealth = (function() {
 
   function enqueueAkaJobBackgroundQuestions(questions) {
     if (!Array.isArray(questions) || questions.length === 0) return;
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
 
     questions.forEach((q) => {
       const normalizedQuestion = normalizeText(q.question || '');
@@ -3266,7 +3277,7 @@ const Stealth = (function() {
   async function runAkaJobBackgroundQueue() {
     if (akajobBackgroundQueueRunning) return;
     if (extensionContextLost) return;
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
 
     akajobBackgroundQueueRunning = true;
     try {
@@ -3319,7 +3330,7 @@ const Stealth = (function() {
 
   function enqueueHarvardBackgroundQuestions(questions) {
     if (!Array.isArray(questions) || questions.length === 0) return;
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
 
     questions.forEach((q) => {
       const normalizedQuestion = normalizeText(q.question || '');
@@ -3354,7 +3365,7 @@ const Stealth = (function() {
   async function runHarvardBackgroundQueue() {
     if (harvardBackgroundQueueRunning) return;
     if (extensionContextLost) return;
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
 
     harvardBackgroundQueueRunning = true;
     try {
@@ -3395,7 +3406,7 @@ const Stealth = (function() {
   async function runHarvardPrefetch() {
     if (!isHarvardManageMentorPage()) return;
     if (extensionContextLost) return;
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
     if (harvardPrefetchRunning) return;
 
     const question = parseHarvardManageMentorQuestion();
@@ -3486,7 +3497,7 @@ const Stealth = (function() {
       return;
     }
 
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
 
     await prefetchQuestionHint(question, fingerprint);
   }
@@ -3515,7 +3526,7 @@ const Stealth = (function() {
       return;
     }
 
-    if (!settings?.apiKey) return;
+    if (!hasValidApiKey()) return;
     await prefetchQuestionHint(question, fingerprint);
   }
 

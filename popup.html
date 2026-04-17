@@ -37,26 +37,51 @@
         <h2>API Configuration</h2>
         
         <div class="form-group">
-          <label for="apiKey">OpenRouter API Key</label>
-          <input type="password" id="apiKey" placeholder="Enter your OpenRouter API key" autocomplete="off">
-          <p class="hint">Get free API key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a></p>
+          <label for="aiProvider">AI Provider</label>
+          <select id="aiProvider">
+            <option value="openrouter">OpenRouter (Supports many models)</option>
+            <option value="gemini">Google Gemini (Direct API)</option>
+          </select>
         </div>
 
-        <div class="form-group">
-          <label for="model">AI Model</label>
-          <select id="model">
-            <option value="google/gemma-4-26b-a4b-it:free">Google Gemma 4 (26B) - Recommended</option>
-            <option value="google/gemma-4-31b-it:free">Google Gemma 4 (31B) - More Powerful</option>
-            <option value="openrouter/free">Auto-Select Best Free Model</option>
-            <option value="minimax/minimax-m2.5:free">MiniMax M2.5</option>
-            <option value="nvidia/nemotron-3-nano-30b-a3b:free">NVIDIA Nemotron Nano</option>
-            <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Paid)</option>
-            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Paid)</option>
-            <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Paid)</option>
-            <option value="google/gemini-exp-1206">Gemini Experimental 1206 (Paid)</option>
-            <option value="openrouter/auto">Auto-Select Best Model (Paid + Free)</option>
-          </select>
-          <p class="hint">Free and paid models supported. Paid models require OpenRouter credits.</p>
+        <div id="openrouter-config">
+          <div class="form-group">
+            <label for="apiKey">OpenRouter API Key</label>
+            <input type="password" id="apiKey" placeholder="Enter your OpenRouter API key" autocomplete="off">
+            <p class="hint">Get free API key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a></p>
+          </div>
+
+          <div class="form-group">
+            <label for="model">OpenRouter Model</label>
+            <select id="model">
+              <option value="google/gemini-3-pro">Gemini 3 Pro (State of the art)</option>
+              <option value="google/gemini-3-flash">Gemini 3 Flash (Fast & Smart)</option>
+              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="google/gemini-exp-1206">Gemini Exp 1206</option>
+              <option value="google/gemma-4-31b-it:free">Gemma 4 (31B) - Free</option>
+              <option value="openrouter/auto">Auto-Select Best</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="gemini-config" style="display: none;">
+          <div class="form-group">
+            <label for="geminiApiKey">Google Gemini API Key</label>
+            <input type="password" id="geminiApiKey" placeholder="Nhập Gemini API key của bạn" autocomplete="off">
+            <p class="hint">Lấy key miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a></p>
+          </div>
+
+          <div class="form-group">
+            <label for="gemini-model">Gemini Model</label>
+            <select id="gemini-model">
+              <option value="gemini-2.0-pro-exp-02-05">Gemini 2.0 Pro Experimental</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stable)</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <option value="gemini-exp-1206">Gemini Experimental 1206</option>
+            </select>
+            <p class="hint">Sử dụng ID chuẩn từ Google AI Studio.</p>
+          </div>
         </div>
       </div>
 
