@@ -128,14 +128,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Listen for messages from content script or popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'solveQuiz') {
-    handleQuizQuestion(request.question, request.options, request.questionType)
+    handleQuizQuestion(request.question, request.options, request.questionType, request.model)
       .then(sendResponse)
       .catch(err => sendResponse({ error: err.message }));
     return true; // Keep message channel open for async response
   }
 
   if (request.action === 'solveCodingQuestion') {
-    handleCodingQuestion(request.payload)
+    handleCodingQuestion(request.payload, request.model)
       .then(sendResponse)
       .catch(err => sendResponse({ error: err.message }));
     return true;
@@ -149,7 +149,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'solveQuizVision') {
-    handleVisionQuizQuestion(request.payload, sender)
+    handleVisionQuizQuestion(request.payload, sender, request.model)
       .then(sendResponse)
       .catch(err => sendResponse({ error: err.message }));
     return true;
@@ -333,28 +333,38 @@ async function callGeminiAPI(apiKey, prompt, model, responseParser = parseAIResp
 /**
  * Main function to solve quiz question using AI via OpenRouter
  */
-async function handleQuizQuestion(question, options, questionType = 'multiple_choice') {
+async function handleQuizQuestion(question, options, questionType = 'multiple_choice', modelOverride = '') {
   const prompt = buildPrompt(question, options, questionType);
-  return callAI(prompt, parseAIResponse, { allowVision: false });
+  const requestOptions = { allowVision: false };
+  if (modelOverride) {
+    requestOptions.model = normalizePreferredModel(modelOverride);
+  }
+  return callAI(prompt, parseAIResponse, requestOptions);
 }
 
-async function handleCodingQuestion(payload) {
+async function handleCodingQuestion(payload, modelOverride = '') {
   const prompt = buildCodingPrompt(payload);
-  return callAI(prompt, parseCodingResponse, {
+  const requestOptions = {
     allowVision: false,
     temperature: 0.2,
     maxTokens: 1400
-  });
+  };
+
+  if (modelOverride) {
+    requestOptions.model = normalizePreferredModel(modelOverride);
+  }
+
+  return callAI(prompt, parseCodingResponse, requestOptions);
 }
 
-async function handleVisionQuizQuestion(payload, sender) {
+async function handleVisionQuizQuestion(payload, sender, modelOverride = '') {
   const settings = await getSettings();
   const capturedImage = await captureQuizRegionImage(payload, sender);
   const prompt = payload?.question || 'Analyze this quiz question and provide the correct answer.';
   const provider = settings.aiProvider || 'openrouter';
+  const preferredModel = normalizePreferredModel(modelOverride || settings.model);
 
   if (provider === 'openrouter') {
-    const preferredModel = normalizePreferredModel(settings.model);
     const visionModel = pickVisionModel(preferredModel);
     const visionFallbackModels = buildVisionFallbackModels(visionModel);
 
@@ -372,7 +382,8 @@ async function handleVisionQuizQuestion(payload, sender) {
     image: capturedImage,
     temperature: 0.1,
     maxTokens: 700,
-    allowVision: true
+    allowVision: true,
+    model: preferredModel
   });
 }
 
@@ -636,11 +647,19 @@ function buildVisionMessages(payload, capturedImage = '') {
 }
 
 function pickVisionModel(preferredModel) {
-  if (preferredModel && /vl|vision|gemini-2\.0-flash-exp|llama-3\.2-11b-vision/i.test(preferredModel)) {
+  if (!preferredModel) {
+    return 'meta-llama/llama-3.2-11b-vision-instruct:free';
+  }
+
+  if (preferredModel === 'openrouter/free') {
+    return 'meta-llama/llama-3.2-11b-vision-instruct:free';
+  }
+
+  if (/vl|vision|gemini-/i.test(preferredModel)) {
     return preferredModel;
   }
 
-  return 'meta-llama/llama-3.2-11b-vision-instruct:free';
+  return preferredModel;
 }
 
 function buildVisionFallbackModels(primaryModel) {
@@ -649,7 +668,6 @@ function buildVisionFallbackModels(primaryModel) {
     'meta-llama/llama-3.2-11b-vision-instruct:free',
     'qwen/qwen2.5-vl-72b-instruct:free',
     'google/gemini-2.0-flash-exp:free',
-    'openrouter/free',
     'openrouter/auto'
   ];
 
@@ -822,7 +840,17 @@ function shouldRetryWithFallback(errorMsg, model) {
     message.includes('unknown model') ||
     message.includes('model not found');
 
-  if (invalidModel) return true;
+  const visionUnsupported = message.includes('does not support image') ||
+    message.includes('does not support vision') ||
+    message.includes('multimodal is not supported') ||
+    message.includes('image input is not supported') ||
+    message.includes('vision is not supported') ||
+    message.includes('no provider available') ||
+    message.includes('no provider found') ||
+    message.includes('provider has no endpoint') ||
+    message.includes('unsupported content type');
+
+  if (invalidModel || visionUnsupported) return true;
 
   if (!model || (!model.includes(':free') && model !== 'openrouter/free' && model !== 'openrouter/auto')) return false;
 

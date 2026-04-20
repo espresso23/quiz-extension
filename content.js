@@ -97,7 +97,12 @@ const Stealth = (function() {
   let currentQuestion = null;
   let sidebarVisible = false;
   let sidebarPinned = false;
+  let sidebarGhostTimer = null;
+  let sidebarHideTimer = null;
+  let sidebarPointerInside = false;
+  let sidebarFocusInside = false;
   let settings = null;
+  let lastModelSignature = '';
   let shadowContainer = null;
   let shadowRoot = null;
   let sidebarElement = null;
@@ -187,6 +192,7 @@ const Stealth = (function() {
     };
 
     settings.autoHideDelay = Math.max(3000, settings.autoHideDelay || 8000);
+    lastModelSignature = getActiveModelSignature(settings);
     console.log('[AI Translator] Settings loaded:', settings);
     
     // Create hidden UI elements (not visible by default)
@@ -255,21 +261,23 @@ const Stealth = (function() {
         position: 'fixed',
         top: '0',
         right: '0',
-        width: '400px',
+        width: '360px',
         height: '100vh',
         zIndex: '999998',
-        background: 'white',
-        boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.15)',
+        background: 'rgba(246, 251, 255, 0.92)',
+        boxShadow: '-3px 0 12px rgba(20, 36, 56, 0.2)',
+        backdropFilter: 'blur(6px)',
         visibility: 'hidden', // Hidden by default
         opacity: '0',
-        transition: 'all 0.3s ease',
+        transform: 'translateX(22px)',
+        transition: 'transform 0.28s ease, opacity 0.28s ease, box-shadow 0.28s ease, filter 0.28s ease',
         display: 'flex',
         flexDirection: 'column'
       }
     });
     
     sidebarElement.innerHTML = `
-      <div class="${Stealth.randomClassName()}" style="background: linear-gradient(135deg, #4a90d9, #6c5ce7); color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center;">
+      <div class="${Stealth.randomClassName()}" style="background: linear-gradient(135deg, #2f5f88, #4578a0); color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center;">
         <h3 style="font-size: 16px; margin: 0;">AI Translator</h3>
         <button class="${Stealth.randomClassName()}" style="background: rgba(255,255,255,0.2); border: none; border-radius: 4px; width: 32px; height: 32px; font-size: 20px; color: white; cursor: pointer;">&times;</button>
       </div>
@@ -339,7 +347,7 @@ const Stealth = (function() {
           <p style="font-size: 13px; color: #666;">Bôi đen câu hỏi và đáp án, sau đó nhấn Ctrl+Shift+E (hoặc Alt+Shift+E) để lấy gợi ý. Ctrl+Shift+Q (hoặc Alt+Shift+Q) để mở/thu gọn sidebar.</p>
         </div>
         <div class="${Stealth.randomClassName()}" id="sidebar-options" style="margin-bottom: 12px;"></div>
-        <button class="${Stealth.randomClassName()}" id="sidebar-solve-btn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #4a90d9, #6c5ce7); color: white; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; margin-bottom: 16px;">
+        <button class="${Stealth.randomClassName()}" id="sidebar-solve-btn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #356d95, #4d86ad); color: white; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; margin-bottom: 16px;">
           Get Answer Hint
         </button>
         <div class="${Stealth.randomClassName()}" id="sidebar-result" style="display: none; margin-bottom: 16px;">
@@ -388,7 +396,20 @@ const Stealth = (function() {
 
     const providerSelect = sidebarElement.querySelector('#sidebar-ai-provider');
     if (providerSelect) {
-      providerSelect.addEventListener('change', toggleSidebarProviderUI);
+      providerSelect.addEventListener('change', () => {
+        toggleSidebarProviderUI();
+        applySidebarProviderModelSelection();
+      });
+    }
+
+    const openrouterModelSelect = sidebarElement.querySelector('#sidebar-openrouter-model');
+    if (openrouterModelSelect) {
+      openrouterModelSelect.addEventListener('change', applySidebarProviderModelSelection);
+    }
+
+    const geminiModelSelect = sidebarElement.querySelector('#sidebar-gemini-model');
+    if (geminiModelSelect) {
+      geminiModelSelect.addEventListener('change', applySidebarProviderModelSelection);
     }
 
     const saveSettingsBtn = sidebarElement.querySelector('#sidebar-settings-save');
@@ -403,8 +424,134 @@ const Stealth = (function() {
 
     populateSidebarModelSelects();
     syncSidebarSettingsUIFromState();
+    attachSidebarInteractionHandlers();
     
     shadow.appendChild(sidebarElement);
+  }
+
+  function attachSidebarInteractionHandlers() {
+    if (!sidebarElement) return;
+
+    sidebarElement.addEventListener('mouseenter', () => {
+      sidebarPointerInside = true;
+      applySidebarActiveState();
+      clearSidebarStealthTimers();
+    });
+
+    sidebarElement.addEventListener('mouseleave', () => {
+      sidebarPointerInside = false;
+      scheduleSidebarStealthCycle({ ghostDelay: 700 });
+    });
+
+    sidebarElement.addEventListener('focusin', () => {
+      sidebarFocusInside = true;
+      applySidebarActiveState();
+      clearSidebarStealthTimers();
+    });
+
+    sidebarElement.addEventListener('focusout', (event) => {
+      const related = event?.relatedTarget;
+      sidebarFocusInside = !!(related && sidebarElement.contains(related));
+      if (!sidebarFocusInside) {
+        scheduleSidebarStealthCycle({ ghostDelay: 900 });
+      }
+    });
+  }
+
+  function getActiveModelSignature(sourceSettings = settings) {
+    const provider = sourceSettings?.aiProvider || 'openrouter';
+    const model = String(sourceSettings?.model || '').trim();
+    return `${provider}::${model}`;
+  }
+
+  function invalidateModelDependentCaches(reason = 'model changed') {
+    questionHintCache.clear();
+    sessionCachedFingerprints.clear();
+    processedQuestionFingerprints.clear();
+    pendingAutoSolveFingerprints.clear();
+    prefetchInFlight.clear();
+    harvardSeenQuestionFingerprints.clear();
+    harvardBackgroundSolved.clear();
+    akajobBackgroundSolved.clear();
+    updateProgressBadge();
+    console.log('[AI Translator] Cleared cached hints because', reason);
+  }
+
+  function isSidebarInteractionActive() {
+    return sidebarPointerInside || sidebarFocusInside;
+  }
+
+  function clearSidebarStealthTimers() {
+    clearTimeout(autoHideTimer);
+    autoHideTimer = null;
+    clearTimeout(sidebarGhostTimer);
+    sidebarGhostTimer = null;
+    clearTimeout(sidebarHideTimer);
+    sidebarHideTimer = null;
+  }
+
+  function applySidebarActiveState() {
+    if (!sidebarElement) return;
+    Stealth.stealthShow(sidebarElement);
+    sidebarElement.style.transform = 'translateX(0)';
+    sidebarElement.style.opacity = '1';
+    sidebarElement.style.filter = 'none';
+    sidebarElement.style.boxShadow = '-3px 0 12px rgba(20, 36, 56, 0.2)';
+    sidebarElement.style.pointerEvents = 'auto';
+  }
+
+  function applySidebarGhostState() {
+    if (!sidebarElement || !sidebarVisible || isSidebarInteractionActive()) return;
+    Stealth.stealthShow(sidebarElement);
+    sidebarElement.style.transform = 'translateX(calc(100% - 44px))';
+    sidebarElement.style.opacity = '0.3';
+    sidebarElement.style.filter = 'saturate(0.72)';
+    sidebarElement.style.boxShadow = '-1px 0 6px rgba(20, 36, 56, 0.12)';
+    sidebarElement.style.pointerEvents = 'auto';
+  }
+
+  function scheduleSidebarStealthCycle(options = {}) {
+    if (!sidebarVisible || !settings?.stealthMode || sidebarPinned) return;
+
+    const ghostDelay = Number.isFinite(options.ghostDelay) ? Math.max(350, options.ghostDelay) : 1300;
+    const hideDelay = Number.isFinite(options.hideDelay)
+      ? Math.max(1800, options.hideDelay)
+      : Math.max(3000, settings.autoHideDelay || 8000);
+
+    clearSidebarStealthTimers();
+
+    sidebarGhostTimer = setTimeout(() => {
+      if (!sidebarVisible) return;
+      if (isSidebarInteractionActive()) {
+        scheduleSidebarStealthCycle({ ghostDelay: 700, hideDelay });
+        return;
+      }
+      applySidebarGhostState();
+    }, ghostDelay);
+
+    sidebarHideTimer = setTimeout(() => {
+      if (!sidebarVisible) return;
+      if (isSidebarInteractionActive()) {
+        scheduleSidebarStealthCycle({ ghostDelay: 700, hideDelay });
+        return;
+      }
+      hideSidebar();
+    }, hideDelay);
+
+    autoHideTimer = sidebarHideTimer;
+  }
+
+  function showSidebarStealth(options = {}) {
+    if (!sidebarElement) return;
+
+    sidebarPinned = !!options.pin;
+    sidebarVisible = true;
+    applySidebarActiveState();
+    forceSidebarIntoViewport();
+
+    if (!sidebarPinned) {
+      scheduleSidebarStealthCycle({ ghostDelay: options.ghostDelay });
+    }
   }
   
   /**
@@ -541,6 +688,30 @@ const Stealth = (function() {
     } else {
       openrouterConfig.style.display = 'block';
       geminiConfig.style.display = 'none';
+    }
+  }
+
+  function applySidebarProviderModelSelection() {
+    if (!settings) return;
+
+    const provider = getSidebarNode('#sidebar-ai-provider')?.value || settings.aiProvider || 'openrouter';
+    const openrouterModel = String(getSidebarNode('#sidebar-openrouter-model')?.value || '').trim();
+    const geminiModel = String(getSidebarNode('#sidebar-gemini-model')?.value || '').trim();
+    const model = provider === 'gemini'
+      ? (geminiModel || settings.model || 'gemini-1.5-flash')
+      : (openrouterModel || settings.model || 'google/gemma-4-26b-a4b-it:free');
+
+    const previousSignature = getActiveModelSignature(settings);
+    settings = {
+      ...settings,
+      aiProvider: provider,
+      model
+    };
+
+    const nextSignature = getActiveModelSignature(settings);
+    if (previousSignature !== nextSignature) {
+      invalidateModelDependentCaches('temporary sidebar model selection change');
+      lastModelSignature = nextSignature;
     }
   }
 
@@ -685,6 +856,7 @@ const Stealth = (function() {
     }
 
     try {
+      const previousSignature = getActiveModelSignature(settings);
       if (saveBtn) {
         saveBtn.disabled = true;
         saveBtn.textContent = 'Saving...';
@@ -696,6 +868,12 @@ const Stealth = (function() {
         ...parsed.settings,
         autoHideDelay: Math.max(3000, parsed.settings.autoHideDelay || 8000)
       };
+
+      const nextSignature = getActiveModelSignature(settings);
+      if (previousSignature !== nextSignature) {
+        invalidateModelDependentCaches('settings saved from sidebar');
+      }
+      lastModelSignature = nextSignature;
 
       syncSidebarSettingsUIFromState();
       if (options.showSuccess) {
@@ -730,6 +908,7 @@ const Stealth = (function() {
 
       const result = await sendRuntimeMessage({
         action: 'solveQuiz',
+        model: settings?.model || '',
         question: 'What is 2 + 2?',
         options: ['3', '4', '5', '6'],
         questionType: 'multiple_choice'
@@ -822,6 +1001,7 @@ const Stealth = (function() {
 
       const next = changes.settings.newValue || {};
       const previousAutoDetect = !!settings.autoDetect;
+      const previousSignature = getActiveModelSignature(settings);
 
       settings = {
         ...settings,
@@ -829,11 +1009,18 @@ const Stealth = (function() {
         aiProvider: next.aiProvider || settings.aiProvider || 'openrouter',
         apiKey: next.apiKey !== undefined ? next.apiKey : settings.apiKey,
         geminiApiKey: next.geminiApiKey !== undefined ? next.geminiApiKey : settings.geminiApiKey,
+        model: next.model !== undefined ? next.model : settings.model,
         autoDetect: next.autoDetect !== false,
         showExplanations: next.showExplanations !== false,
         stealthMode: next.stealthMode !== false,
         autoHideDelay: Number.isFinite(next.autoHideDelay) ? next.autoHideDelay : (settings.autoHideDelay || 8000)
       };
+
+      const nextSignature = getActiveModelSignature(settings);
+      if (previousSignature !== nextSignature || (lastModelSignature && nextSignature !== lastModelSignature)) {
+        invalidateModelDependentCaches('settings sync model/provider update');
+      }
+      lastModelSignature = nextSignature;
 
       if (settings.autoDetect && !previousAutoDetect) {
         setupAutoDetect();
@@ -2454,9 +2641,8 @@ const Stealth = (function() {
     console.log('[AI Translator] toggleSidebar, visible:', sidebarVisible);
     
     if (sidebarVisible) {
-      sidebarPinned = true;
-      Stealth.stealthShow(sidebarElement);
-      forceSidebarIntoViewport();
+      sidebarPinned = false;
+      showSidebarStealth({ ghostDelay: 1400 });
       logSidebarRect('toggle');
       console.log('[AI Translator] Sidebar shown');
       syncSidebarSettingsUIFromState();
@@ -2482,8 +2668,7 @@ const Stealth = (function() {
         scheduleAkaJobPrefetch(300);
       }
       
-      // Do not auto-hide when opened manually by shortcut.
-      clearTimeout(autoHideTimer);
+      scheduleSidebarStealthCycle({ ghostDelay: 1500 });
     } else {
       sidebarPinned = false;
       hideSidebar();
@@ -2498,8 +2683,12 @@ const Stealth = (function() {
     
     sidebarVisible = false;
     sidebarPinned = false;
+    sidebarPointerInside = false;
+    sidebarFocusInside = false;
+    clearSidebarStealthTimers();
+    sidebarElement.style.transform = 'translateX(20px)';
+    sidebarElement.style.filter = 'none';
     Stealth.stealthHide(sidebarElement);
-    clearTimeout(autoHideTimer);
   }
 
   function forceSidebarIntoViewport() {
@@ -2508,7 +2697,7 @@ const Stealth = (function() {
     sidebarElement.style.zIndex = '2147483647';
     sidebarElement.style.right = '0';
     sidebarElement.style.top = '0';
-    sidebarElement.style.width = 'min(420px, 92vw)';
+    sidebarElement.style.width = 'min(360px, 88vw)';
     sidebarElement.style.height = '100vh';
     sidebarElement.style.maxWidth = '100vw';
     sidebarElement.style.maxHeight = '100vh';
@@ -2701,41 +2890,47 @@ const Stealth = (function() {
       }
 
       if (!sidebarVisible && sidebarElement) {
-        Stealth.stealthShow(sidebarElement);
-        forceSidebarIntoViewport();
+        showSidebarStealth({ ghostDelay: 1300 });
         logSidebarRect('solve-no-question');
-        sidebarVisible = true;
       }
       showError('Khong tim thay noi dung da boi den. Hay boi den ca cau hoi va cac dap an, sau do thu lai.');
       return { error: 'No question content found' };
     }
 
     const fingerprint = options.markFingerprint || getQuestionFingerprint(currentQuestion);
+    const modelSignature = getActiveModelSignature();
     const cachedEntry = fingerprint ? questionHintCache.get(fingerprint) : null;
+    const cacheMatch = !!(cachedEntry && cachedEntry.result && cachedEntry.modelSignature === modelSignature);
 
-      if (cachedEntry && cachedEntry.result) {
+    if (cachedEntry && !cacheMatch && fingerprint) {
+      questionHintCache.delete(fingerprint);
+      sessionCachedFingerprints.delete(fingerprint);
+    }
+
+    if (cacheMatch && cachedEntry && cachedEntry.result) {
       if (fingerprint) {
         markFingerprintAsCached(fingerprint);
       }
       if (shouldRenderHintInSidebar(options)) {
         if (!sidebarVisible && sidebarElement) {
-          Stealth.stealthShow(sidebarElement);
-          forceSidebarIntoViewport();
+          showSidebarStealth({ ghostDelay: 1300 });
           logSidebarRect('solve-cached');
-          sidebarVisible = true;
+        } else {
+          applySidebarActiveState();
         }
         updateSidebarWithQuestion(currentQuestion);
         displayResult(cachedEntry.result);
+        scheduleSidebarStealthCycle({ ghostDelay: 1200 });
       }
       highlightCorrectOption(cachedEntry.result.answer);
       return cachedEntry.result;
     }
     
     if (shouldRenderHintInSidebar(options) && !sidebarVisible && sidebarElement) {
-      Stealth.stealthShow(sidebarElement);
-      forceSidebarIntoViewport();
+      showSidebarStealth({ ghostDelay: 1200 });
       logSidebarRect('solve-show');
-      sidebarVisible = true;
+    } else if (shouldRenderHintInSidebar(options) && sidebarVisible) {
+      applySidebarActiveState();
     }
 
     if (shouldRenderHintInSidebar(options)) {
@@ -2765,6 +2960,7 @@ const Stealth = (function() {
       if (currentQuestion.questionType === 'coding') {
         const codingResult = await sendRuntimeMessage({
           action: 'solveCodingQuestion',
+          model: settings?.model || '',
           payload: {
             question: currentQuestion.question,
             language: currentQuestion.language || getAkaJobCodingLanguage(),
@@ -2786,6 +2982,7 @@ const Stealth = (function() {
         if (fingerprint) {
           questionHintCache.set(fingerprint, {
             result: codingResult,
+            modelSignature,
             timestamp: Date.now()
           });
           markFingerprintAsCached(fingerprint);
@@ -2793,6 +2990,7 @@ const Stealth = (function() {
 
         if (shouldRenderHintInSidebar(options)) {
           displayResult(codingResult);
+          scheduleSidebarStealthCycle({ ghostDelay: 1300 });
         }
 
         return codingResult;
@@ -2806,6 +3004,7 @@ const Stealth = (function() {
         useVision
           ? {
               action: 'solveQuizVision',
+              model: settings?.model || '',
               payload: {
                 question: currentQuestion.question,
                 options: currentQuestion.options,
@@ -2815,8 +3014,9 @@ const Stealth = (function() {
                 captureRect
               }
             }
-          : {
+            : {
               action: 'solveQuiz',
+              model: settings?.model || '',
               question: currentQuestion.question,
               options: currentQuestion.options,
               questionType: currentQuestion.questionType
@@ -2839,6 +3039,7 @@ const Stealth = (function() {
       if (fingerprint) {
         questionHintCache.set(fingerprint, {
           result,
+          modelSignature,
           timestamp: Date.now()
         });
         markFingerprintAsCached(fingerprint);
@@ -2846,20 +3047,13 @@ const Stealth = (function() {
       
       if (shouldRenderHintInSidebar(options)) {
         displayResult(result);
+        scheduleSidebarStealthCycle({ ghostDelay: 1200 });
       }
       highlightCorrectOption(result.answer);
       
-      // Auto-hide after showing answer (stealth mode)
-      if (!options.skipAutoHide && settings.stealthMode && sidebarVisible && !sidebarPinned) {
-        clearTimeout(autoHideTimer);
-        autoHideTimer = setTimeout(() => {
-        if (sidebarElement && sidebarElement.matches(':hover')) {
-          autoHideTimer = setTimeout(() => hideAllUI(), Math.max(1500, (settings.autoHideDelay || 8000) / 2));
-          return;
-        }
-        hideAllUI();
-      }, settings.autoHideDelay || 8000);
-    }
+      if (!options.skipAutoHide && settings.stealthMode && sidebarVisible) {
+        scheduleSidebarStealthCycle({ ghostDelay: 1200 });
+      }
 
       return result;
       
