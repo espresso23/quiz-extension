@@ -16,8 +16,32 @@ const MODEL_CATALOG = [
   'google/gemini-2.0-pro-exp-02-05',
   'google/gemini-2.0-flash',
   'google/gemini-exp-1206',
+  'google/gemma-4-26b-a4b-it:free',
   'google/gemma-4-31b-it:free',
   'openrouter/auto'
+];
+
+const CONTEXT_MENU_ITEMS = [
+  {
+    id: 'ai-solve-selection',
+    title: 'Translate This Text',
+    contexts: ['selection']
+  },
+  {
+    id: 'ai-solve-page',
+    title: 'Analyze Page Content',
+    contexts: ['page']
+  },
+  {
+    id: 'ai-toggle-ui',
+    title: 'Toggle Translator UI',
+    contexts: ['page']
+  },
+  {
+    id: 'ai-hide-all',
+    title: 'Hide Translator UI',
+    contexts: ['page']
+  }
 ];
 
 // Initialize storage on install
@@ -29,34 +53,30 @@ chrome.runtime.onInstalled.addListener(() => {
   });
   
   // Create right-click context menu
-  createContextMenus();
+  void createContextMenus();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void createContextMenus();
 });
 
 // Create context menus for stealth activation
-function createContextMenus() {
-  chrome.contextMenus.create({
-    id: 'ai-solve-selection',
-    title: 'Translate This Text',
-    contexts: ['selection']
+async function createContextMenus() {
+  await new Promise((resolve) => {
+    chrome.contextMenus.removeAll(() => resolve());
   });
-  
-  chrome.contextMenus.create({
-    id: 'ai-solve-page',
-    title: 'Analyze Page Content',
-    contexts: ['page']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'ai-toggle-ui',
-    title: 'Toggle Translator UI',
-    contexts: ['page']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'ai-hide-all',
-    title: 'Hide Translator UI',
-    contexts: ['page']
-  });
+
+  for (const item of CONTEXT_MENU_ITEMS) {
+    await new Promise((resolve) => {
+      chrome.contextMenus.create(item, () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          console.warn('[AI Translator] Failed to create context menu:', item.id, err.message || err);
+        }
+        resolve();
+      });
+    });
+  }
 }
 
 /**
@@ -204,7 +224,7 @@ async function callGeminiAPI(apiKey, prompt, model, responseParser = parseAIResp
   
   // Ensure it's a valid Gemini model name for the API
   if (!geminiModel.startsWith('gemini-')) {
-    geminiModel = 'gemini-2.0-flash'; // Secure fallback
+    geminiModel = 'gemini-1.5-flash'; // Safer default fallback
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
@@ -254,34 +274,60 @@ async function callGeminiAPI(apiKey, prompt, model, responseParser = parseAIResp
     parts: userParts
   });
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      contents,
-      generationConfig: {
-        temperature: requestOptions.temperature || 0.3,
-        maxOutputTokens: requestOptions.maxTokens || 1000,
-        response_mime_type: 'application/json'
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents,
+        generationConfig: {
+          temperature: requestOptions.temperature || 0.3,
+          maxOutputTokens: requestOptions.maxTokens || 1000,
+          response_mime_type: 'application/json'
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: { message: response.statusText } }));
+      const errorMsg = errorData.error?.message || response.statusText;
+      
+      // Fallback logic for "Model not found" or "Model not supported"
+      if (errorMsg.includes('not found') || errorMsg.includes('not supported') || response.status === 404) {
+        if (geminiModel !== 'gemini-2.0-flash' && geminiModel !== 'gemini-1.5-flash') {
+          console.log(`[AI Translator] Model ${geminiModel} not available, falling back to gemini-2.0-flash`);
+          return callGeminiAPI(apiKey, prompt, 'gemini-2.0-flash', responseParser, requestOptions);
+        }
       }
-    })
-  });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
-    throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+      // Fallback logic for "Quota exceeded"
+      if (errorMsg.toLowerCase().includes('quota') || response.status === 429) {
+        if (geminiModel.startsWith('gemini-2.0')) {
+          console.log(`[AI Translator] Gemini 2.0 quota exceeded, trying Gemini 1.5 Flash...`);
+          return callGeminiAPI(apiKey, prompt, 'gemini-1.5-flash', responseParser, requestOptions);
+        }
+        throw new Error(`Bạn đã hết hạn mức (Quota) miễn phí của Gemini. Vui lòng đợi vài phút hoặc đổi sang OpenRouter trong phần cài đặt.`);
+      }
+      
+      throw new Error(`Gemini API error: ${errorMsg}`);
+    }
+
+    const data = await response.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    if (!content) {
+      throw new Error('Gemini API returned empty response content');
+    }
+
+    return responseParser(content);
+  } catch (err) {
+    if (err.message.includes('not found') && geminiModel !== 'gemini-2.0-flash' && geminiModel !== 'gemini-1.5-flash') {
+      return callGeminiAPI(apiKey, prompt, 'gemini-2.0-flash', responseParser, requestOptions);
+    }
+    throw err;
   }
-
-  const data = await response.json();
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-  if (!content) {
-    throw new Error('Gemini API returned empty response content');
-  }
-
-  return responseParser(content);
 }
 
 /**
@@ -302,8 +348,25 @@ async function handleCodingQuestion(payload) {
 }
 
 async function handleVisionQuizQuestion(payload, sender) {
+  const settings = await getSettings();
   const capturedImage = await captureQuizRegionImage(payload, sender);
   const prompt = payload?.question || 'Analyze this quiz question and provide the correct answer.';
+  const provider = settings.aiProvider || 'openrouter';
+
+  if (provider === 'openrouter') {
+    const preferredModel = normalizePreferredModel(settings.model);
+    const visionModel = pickVisionModel(preferredModel);
+    const visionFallbackModels = buildVisionFallbackModels(visionModel);
+
+    return callAI('', parseAIResponse, {
+      customMessages: buildVisionMessages(payload, capturedImage),
+      model: visionModel,
+      fallbackModels: visionFallbackModels,
+      temperature: 0.1,
+      maxTokens: 700,
+      allowVision: true
+    });
+  }
 
   return callAI(prompt, parseAIResponse, {
     image: capturedImage,
@@ -577,17 +640,17 @@ function pickVisionModel(preferredModel) {
     return preferredModel;
   }
 
-  return 'openrouter/auto';
+  return 'meta-llama/llama-3.2-11b-vision-instruct:free';
 }
 
 function buildVisionFallbackModels(primaryModel) {
   const models = [
     primaryModel,
-    'openrouter/auto',
-    'google/gemini-2.0-flash-exp:free',
     'meta-llama/llama-3.2-11b-vision-instruct:free',
     'qwen/qwen2.5-vl-72b-instruct:free',
-    'openrouter/free'
+    'google/gemini-2.0-flash-exp:free',
+    'openrouter/free',
+    'openrouter/auto'
   ];
 
   const unique = [];
@@ -623,6 +686,7 @@ async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemini-2.5-flas
         'google/gemini-2.5-flash',
         'google/gemini-2.5-pro',
         'google/gemini-exp-1206',
+        'google/gemma-4-26b-a4b-it:free',
         'google/gemma-4-31b-it:free'
       ];
 

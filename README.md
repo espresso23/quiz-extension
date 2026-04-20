@@ -50,7 +50,7 @@ Open popup settings and configure:
 
 ## Supported Model Options (Current Popup List)
 
-- `google/gemma-4-26b-a4b-it:free`
+- `google/gemma-4-26b-a4b-it:free` (quiz recommended)
 - `google/gemma-4-31b-it:free`
 - `openrouter/free`
 - `minimax/minimax-m2.5:free`

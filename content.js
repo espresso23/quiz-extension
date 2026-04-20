@@ -147,6 +147,23 @@ const Stealth = (function() {
   const prefetchInFlight = new Map();
   let latestCodingLogicBlock = '';
   let latestCodingFullCode = '';
+  const OPENROUTER_MODELS = [
+    { value: 'google/gemini-3-pro', label: 'Gemini 3 Pro (State of the art)' },
+    { value: 'google/gemini-3-flash', label: 'Gemini 3 Flash (Fast & Smart)' },
+    { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'google/gemini-exp-1206', label: 'Gemini Exp 1206' },
+    { value: 'google/gemma-4-26b-a4b-it:free', label: 'Gemma 4 (26B) - Quiz Recommended' },
+    { value: 'google/gemma-4-31b-it:free', label: 'Gemma 4 (31B) - Free' },
+    { value: 'openrouter/auto', label: 'Auto-Select Best' }
+  ];
+  const GEMINI_MODELS = [
+    { value: 'gemini-2.0-pro-exp-02-05', label: 'Gemini 2.0 Pro Experimental (Feb 5)' },
+    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Stable)' },
+    { value: 'gemini-2.0-flash-lite-preview-02-05', label: 'Gemini 2.0 Flash-Lite' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
+  ];
   
   // Stealth: Run at document_start, wait for DOM
   if (document.readyState === 'loading') {
@@ -258,6 +275,66 @@ const Stealth = (function() {
       </div>
       <div class="${Stealth.randomClassName()}" style="flex: 1; padding: 16px; overflow-y: auto;">
         <div class="${Stealth.randomClassName()}" id="sidebar-progress" style="background: #eef3fb; border: 1px solid #d8e3f5; color: #345; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 12px; display: none;"></div>
+        <div class="${Stealth.randomClassName()}" id="sidebar-settings-wrap" style="border: 1px solid #d9e2f1; border-radius: 8px; margin-bottom: 12px; background: #f7faff;">
+          <button class="${Stealth.randomClassName()}" id="sidebar-settings-toggle" aria-expanded="false" style="width: 100%; text-align: left; border: none; background: transparent; padding: 10px 12px; cursor: pointer; font-size: 13px; color: #2f4f7f; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
+            <span>Settings</span>
+            <span id="sidebar-settings-chevron">+</span>
+          </button>
+          <div class="${Stealth.randomClassName()}" id="sidebar-settings-panel" style="display: none; padding: 0 12px 12px 12px;">
+            <div style="margin-bottom: 8px;">
+              <label for="sidebar-ai-provider" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">AI Provider</label>
+              <select id="sidebar-ai-provider" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;">
+                <option value="openrouter">OpenRouter (Supports many models)</option>
+                <option value="gemini">Google Gemini (Direct API)</option>
+              </select>
+            </div>
+
+            <div id="sidebar-openrouter-config" style="display: block;">
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-api-key" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">OpenRouter API Key</label>
+                <input type="password" id="sidebar-api-key" placeholder="Enter OpenRouter API key" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-openrouter-model" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">OpenRouter Model</label>
+                <select id="sidebar-openrouter-model" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;"></select>
+              </div>
+            </div>
+
+            <div id="sidebar-gemini-config" style="display: none;">
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-gemini-api-key" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Gemini API Key</label>
+                <input type="password" id="sidebar-gemini-api-key" placeholder="Enter Gemini API key" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-gemini-model" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Gemini Model</label>
+                <select id="sidebar-gemini-model" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;"></select>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr; gap: 6px; margin: 8px 0;">
+              <label style="font-size: 12px; color: #44546a; display: flex; gap: 6px; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="sidebar-auto-detect"> Auto-detect
+              </label>
+              <label style="font-size: 12px; color: #44546a; display: flex; gap: 6px; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="sidebar-show-explanations"> Show explanations
+              </label>
+              <label style="font-size: 12px; color: #44546a; display: flex; gap: 6px; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="sidebar-stealth-mode"> Stealth mode
+              </label>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+              <label for="sidebar-auto-hide-delay" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Auto-hide delay (seconds)</label>
+              <input type="number" id="sidebar-auto-hide-delay" min="3" max="30" step="1" value="8" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <button class="${Stealth.randomClassName()}" id="sidebar-settings-save" style="flex: 1; padding: 9px; background: #2f80ed; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Save</button>
+              <button class="${Stealth.randomClassName()}" id="sidebar-settings-test" style="flex: 1; padding: 9px; background: #4b5563; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Test</button>
+            </div>
+            <div id="sidebar-settings-status" style="display: none; border-radius: 6px; padding: 8px; font-size: 12px;"></div>
+          </div>
+        </div>
         <div class="${Stealth.randomClassName()}" id="sidebar-question" style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
           <p style="font-size: 13px; color: #666;">Bôi đen câu hỏi và đáp án, sau đó nhấn Ctrl+Shift+E (hoặc Alt+Shift+E) để lấy gợi ý. Ctrl+Shift+Q (hoặc Alt+Shift+Q) để mở/thu gọn sidebar.</p>
         </div>
@@ -303,6 +380,29 @@ const Stealth = (function() {
     if (copyLogicBtn) {
       copyLogicBtn.addEventListener('click', handleCopyLogicClick);
     }
+
+    const settingsToggleBtn = sidebarElement.querySelector('#sidebar-settings-toggle');
+    if (settingsToggleBtn) {
+      settingsToggleBtn.addEventListener('click', () => toggleSidebarSettingsPanel());
+    }
+
+    const providerSelect = sidebarElement.querySelector('#sidebar-ai-provider');
+    if (providerSelect) {
+      providerSelect.addEventListener('change', toggleSidebarProviderUI);
+    }
+
+    const saveSettingsBtn = sidebarElement.querySelector('#sidebar-settings-save');
+    if (saveSettingsBtn) {
+      saveSettingsBtn.addEventListener('click', () => saveSidebarSettings());
+    }
+
+    const testSettingsBtn = sidebarElement.querySelector('#sidebar-settings-test');
+    if (testSettingsBtn) {
+      testSettingsBtn.addEventListener('click', testSidebarConnection);
+    }
+
+    populateSidebarModelSelects();
+    syncSidebarSettingsUIFromState();
     
     shadow.appendChild(sidebarElement);
   }
@@ -370,6 +470,292 @@ const Stealth = (function() {
     const isAltShift = event.altKey && event.shiftKey && !event.ctrlKey;
     const isCtrlShift = event.ctrlKey && event.shiftKey && !event.altKey;
     return (isAltShift || isCtrlShift) && event.code === 'KeyE';
+  }
+
+  function getSidebarNode(selector) {
+    return sidebarElement?.querySelector(selector) || null;
+  }
+
+  function populateSidebarModelSelects() {
+    const openrouterSelect = getSidebarNode('#sidebar-openrouter-model');
+    const geminiSelect = getSidebarNode('#sidebar-gemini-model');
+    if (!openrouterSelect || !geminiSelect) return;
+
+    const openrouterCurrent = openrouterSelect.value;
+    const geminiCurrent = geminiSelect.value;
+
+    openrouterSelect.innerHTML = OPENROUTER_MODELS
+      .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
+      .join('');
+
+    geminiSelect.innerHTML = GEMINI_MODELS
+      .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
+      .join('');
+
+    if (openrouterCurrent) {
+      ensureSidebarModelOption(openrouterSelect, openrouterCurrent);
+      openrouterSelect.value = openrouterCurrent;
+    }
+
+    if (geminiCurrent) {
+      ensureSidebarModelOption(geminiSelect, geminiCurrent);
+      geminiSelect.value = geminiCurrent;
+    }
+  }
+
+  function ensureSidebarModelOption(selectEl, modelValue) {
+    if (!selectEl || !modelValue) return;
+    const exists = Array.from(selectEl.options).some((opt) => opt.value === modelValue);
+    if (exists) return;
+
+    const option = document.createElement('option');
+    option.value = modelValue;
+    option.textContent = `${modelValue} (Custom)`;
+    selectEl.appendChild(option);
+  }
+
+  function toggleSidebarSettingsPanel(forceOpen) {
+    const panel = getSidebarNode('#sidebar-settings-panel');
+    const toggleBtn = getSidebarNode('#sidebar-settings-toggle');
+    const chevron = getSidebarNode('#sidebar-settings-chevron');
+    if (!panel || !toggleBtn || !chevron) return;
+
+    const currentOpen = panel.style.display !== 'none';
+    const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : !currentOpen;
+
+    panel.style.display = nextOpen ? 'block' : 'none';
+    toggleBtn.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    chevron.textContent = nextOpen ? '-' : '+';
+  }
+
+  function toggleSidebarProviderUI() {
+    const providerSelect = getSidebarNode('#sidebar-ai-provider');
+    const openrouterConfig = getSidebarNode('#sidebar-openrouter-config');
+    const geminiConfig = getSidebarNode('#sidebar-gemini-config');
+    if (!providerSelect || !openrouterConfig || !geminiConfig) return;
+
+    const provider = providerSelect.value;
+    if (provider === 'gemini') {
+      openrouterConfig.style.display = 'none';
+      geminiConfig.style.display = 'block';
+    } else {
+      openrouterConfig.style.display = 'block';
+      geminiConfig.style.display = 'none';
+    }
+  }
+
+  function syncSidebarSettingsUIFromState() {
+    if (!settings || !sidebarElement) return;
+
+    populateSidebarModelSelects();
+
+    const providerSelect = getSidebarNode('#sidebar-ai-provider');
+    const apiKeyInput = getSidebarNode('#sidebar-api-key');
+    const geminiApiKeyInput = getSidebarNode('#sidebar-gemini-api-key');
+    const openrouterModelSelect = getSidebarNode('#sidebar-openrouter-model');
+    const geminiModelSelect = getSidebarNode('#sidebar-gemini-model');
+    const autoDetectInput = getSidebarNode('#sidebar-auto-detect');
+    const showExplanationsInput = getSidebarNode('#sidebar-show-explanations');
+    const stealthModeInput = getSidebarNode('#sidebar-stealth-mode');
+    const autoHideDelayInput = getSidebarNode('#sidebar-auto-hide-delay');
+
+    if (providerSelect) {
+      providerSelect.value = settings.aiProvider || 'openrouter';
+    }
+
+    if (apiKeyInput) {
+      apiKeyInput.value = settings.apiKey || '';
+    }
+
+    if (geminiApiKeyInput) {
+      geminiApiKeyInput.value = settings.geminiApiKey || '';
+    }
+
+    const modelValue = String(settings.model || '').trim();
+    if (modelValue) {
+      if (modelValue.startsWith('gemini-')) {
+        ensureSidebarModelOption(geminiModelSelect, modelValue);
+        if (geminiModelSelect) geminiModelSelect.value = modelValue;
+      } else {
+        ensureSidebarModelOption(openrouterModelSelect, modelValue);
+        if (openrouterModelSelect) openrouterModelSelect.value = modelValue;
+      }
+    }
+
+    if (autoDetectInput) {
+      autoDetectInput.checked = settings.autoDetect !== false;
+    }
+
+    if (showExplanationsInput) {
+      showExplanationsInput.checked = settings.showExplanations !== false;
+    }
+
+    if (stealthModeInput) {
+      stealthModeInput.checked = settings.stealthMode !== false;
+    }
+
+    if (autoHideDelayInput) {
+      autoHideDelayInput.value = String(Math.max(3, Math.floor((settings.autoHideDelay || 8000) / 1000)));
+    }
+
+    toggleSidebarProviderUI();
+  }
+
+  function getSidebarSettingsFromInputs() {
+    const provider = getSidebarNode('#sidebar-ai-provider')?.value || 'openrouter';
+    const apiKey = String(getSidebarNode('#sidebar-api-key')?.value || '').trim();
+    const geminiApiKey = String(getSidebarNode('#sidebar-gemini-api-key')?.value || '').trim();
+    const openrouterModel = String(getSidebarNode('#sidebar-openrouter-model')?.value || '').trim();
+    const geminiModel = String(getSidebarNode('#sidebar-gemini-model')?.value || '').trim();
+    const autoDetect = !!getSidebarNode('#sidebar-auto-detect')?.checked;
+    const showExplanations = !!getSidebarNode('#sidebar-show-explanations')?.checked;
+    const stealthMode = !!getSidebarNode('#sidebar-stealth-mode')?.checked;
+    const delayInput = parseInt(String(getSidebarNode('#sidebar-auto-hide-delay')?.value || '8'), 10);
+    const safeDelay = Number.isFinite(delayInput) ? Math.min(30, Math.max(3, delayInput)) : 8;
+    const model = provider === 'gemini' ? (geminiModel || 'gemini-1.5-flash') : (openrouterModel || 'google/gemma-4-26b-a4b-it:free');
+
+    if (provider === 'openrouter' && !apiKey) {
+      return { ok: false, error: 'Please enter an OpenRouter API key' };
+    }
+
+    if (provider === 'gemini' && !geminiApiKey) {
+      return { ok: false, error: 'Please enter a Gemini API key' };
+    }
+
+    return {
+      ok: true,
+      settings: {
+        ...(settings || {}),
+        aiProvider: provider,
+        apiKey,
+        geminiApiKey,
+        model,
+        autoDetect,
+        showExplanations,
+        stealthMode,
+        autoHideDelay: safeDelay * 1000
+      }
+    };
+  }
+
+  function setSidebarSettingsStatus(message, type = 'info') {
+    const statusEl = getSidebarNode('#sidebar-settings-status');
+    if (!statusEl) return;
+
+    const text = String(message || '').trim();
+    if (!text) {
+      statusEl.style.display = 'none';
+      statusEl.textContent = '';
+      return;
+    }
+
+    statusEl.style.display = 'block';
+    statusEl.textContent = text;
+
+    if (type === 'success') {
+      statusEl.style.background = '#e8f6ea';
+      statusEl.style.border = '1px solid #b7dfbf';
+      statusEl.style.color = '#1f7a2d';
+      return;
+    }
+
+    if (type === 'error') {
+      statusEl.style.background = '#fdecec';
+      statusEl.style.border = '1px solid #f5c2c7';
+      statusEl.style.color = '#9b1c1c';
+      return;
+    }
+
+    statusEl.style.background = '#eef3fb';
+    statusEl.style.border = '1px solid #d8e3f5';
+    statusEl.style.color = '#345';
+  }
+
+  async function saveSidebarSettings(saveOptions = {}) {
+    const options = {
+      showSuccess: true,
+      ...saveOptions
+    };
+
+    const saveBtn = getSidebarNode('#sidebar-settings-save');
+    const parsed = getSidebarSettingsFromInputs();
+    if (!parsed.ok) {
+      setSidebarSettingsStatus(parsed.error || 'Invalid settings.', 'error');
+      return { ok: false, error: parsed.error || 'Invalid settings.' };
+    }
+
+    try {
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+      }
+
+      await sendRuntimeMessage({ action: 'saveSettings', settings: parsed.settings });
+      settings = {
+        ...settings,
+        ...parsed.settings,
+        autoHideDelay: Math.max(3000, parsed.settings.autoHideDelay || 8000)
+      };
+
+      syncSidebarSettingsUIFromState();
+      if (options.showSuccess) {
+        setSidebarSettingsStatus('Settings saved successfully.', 'success');
+      }
+
+      return { ok: true, settings: parsed.settings };
+    } catch (error) {
+      const message = formatExtensionErrorMessage(error);
+      setSidebarSettingsStatus(message, 'error');
+      return { ok: false, error: message };
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      }
+    }
+  }
+
+  async function testSidebarConnection() {
+    const testBtn = getSidebarNode('#sidebar-settings-test');
+
+    try {
+      if (testBtn) {
+        testBtn.disabled = true;
+        testBtn.textContent = 'Testing...';
+      }
+
+      setSidebarSettingsStatus('Saving settings and testing connection...', 'info');
+      const saved = await saveSidebarSettings({ showSuccess: false });
+      if (!saved.ok) return;
+
+      const result = await sendRuntimeMessage({
+        action: 'solveQuiz',
+        question: 'What is 2 + 2?',
+        options: ['3', '4', '5', '6'],
+        questionType: 'multiple_choice'
+      });
+
+      if (!result) {
+        setSidebarSettingsStatus('No response from background service.', 'error');
+        return;
+      }
+
+      if (result.error) {
+        setSidebarSettingsStatus(`Test failed: ${result.error}`, 'error');
+        return;
+      }
+
+      const model = (settings && settings.model) ? `Model: ${settings.model}. ` : '';
+      setSidebarSettingsStatus(`${model}Test successful. Answer: ${result.answer} - ${result.answerText}`, 'success');
+    } catch (error) {
+      const message = formatExtensionErrorMessage(error);
+      setSidebarSettingsStatus(message, 'error');
+    } finally {
+      if (testBtn) {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Test';
+      }
+    }
   }
   
   /**
@@ -464,6 +850,8 @@ const Stealth = (function() {
       if (settings.autoDetect) {
         scheduleAutoDetectScan(500);
       }
+
+      syncSidebarSettingsUIFromState();
     });
   }
 
@@ -2071,6 +2459,7 @@ const Stealth = (function() {
       forceSidebarIntoViewport();
       logSidebarRect('toggle');
       console.log('[AI Translator] Sidebar shown');
+      syncSidebarSettingsUIFromState();
       
       // Manual mode: only use currently selected text when opening sidebar.
       const selectedQuestion = getQuestionFromSelection();

@@ -122,37 +122,68 @@ Do not include any other text. Only return valid JSON.`;
    * Call Gemini API
    */
   async callGemini(prompt) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: `You are a helpful quiz assistant. Always respond with valid JSON.\n\n${prompt}`
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 500
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are a helpful quiz assistant. Always respond with valid JSON.\n\n${prompt}`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 500,
+            response_mime_type: 'application/json'
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: { message: response.statusText } }));
+        const errorMsg = errorData.error?.message || response.statusText;
+        
+        // Fallback for experimental models
+        if ((errorMsg.includes('not found') || errorMsg.includes('not supported')) && this.model !== 'gemini-1.5-flash') {
+          console.warn(`Model ${this.model} failed, falling back to gemini-1.5-flash`);
+          this.model = 'gemini-1.5-flash';
+          return this.callGemini(prompt);
         }
-      })
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
-      throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+
+        // Fallback for Quota exceeded
+        if ((errorMsg.toLowerCase().includes('quota') || response.status === 429) && this.model.startsWith('gemini-2.0')) {
+          console.warn(`Gemini 2.0 quota exceeded, falling back to gemini-1.5-flash`);
+          this.model = 'gemini-1.5-flash';
+          return this.callGemini(prompt);
+        }
+        
+        if (errorMsg.toLowerCase().includes('quota') || response.status === 429) {
+          throw new Error('Hết hạn mức (Quota) miễn phí của Gemini. Vui lòng thử lại sau vài giây.');
+        }
+        
+        throw new Error(`Gemini API error: ${errorMsg}`);
+      }
+      
+      const data = await response.json();
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      
+      if (!content) {
+        throw new Error('Empty response from Gemini API');
+      }
+      
+      return this.parseResponse(content);
+    } catch (err) {
+      if (err.message.includes('not found') && this.model !== 'gemini-1.5-flash') {
+        this.model = 'gemini-1.5-flash';
+        return this.callGemini(prompt);
+      }
+      throw err;
     }
-    
-    const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    
-    if (!content) {
-      throw new Error('Empty response from Gemini API');
-    }
-    
-    return this.parseResponse(content);
   }
   
   /**
