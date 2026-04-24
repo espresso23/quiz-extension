@@ -6,47 +6,24 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-  document.getElementById('saveBtn').addEventListener('click', saveSettings);
-  document.getElementById('testBtn').addEventListener('click', testConnection);
-  document.getElementById('aiProvider').addEventListener('change', toggleProviderUI);
-}
-
-function toggleProviderUI() {
-  const provider = document.getElementById('aiProvider').value;
-  console.log('[AI Translator] Switching UI to provider:', provider);
+  const saveBtn = document.getElementById('saveBtn');
+  const testBtn = document.getElementById('testBtn');
   
-  const openrouterConfig = document.getElementById('openrouter-config');
-  const geminiConfig = document.getElementById('gemini-config');
-  
-  if (provider === 'gemini') {
-    openrouterConfig.style.display = 'none';
-    geminiConfig.style.display = 'block';
-  } else {
-    openrouterConfig.style.display = 'block';
-    geminiConfig.style.display = 'none';
-  }
+  if (saveBtn) saveBtn.addEventListener('click', saveSettings);
+  if (testBtn) testBtn.addEventListener('click', testConnection);
 }
 
 function ensureModelOption(modelValue) {
   const modelSelect = document.getElementById('model');
-  const geminiSelect = document.getElementById('gemini-model');
-  if (!modelValue) return;
+  if (!modelSelect || !modelValue) return;
 
-  const existsInModel = modelSelect && Array.from(modelSelect.options).some((opt) => opt.value === modelValue);
-  const existsInGemini = geminiSelect && Array.from(geminiSelect.options).some((opt) => opt.value === modelValue);
-  
-  if (existsInModel || existsInGemini) return;
+  const exists = Array.from(modelSelect.options).some((opt) => opt.value === modelValue);
+  if (exists) return;
 
-  // Add to appropriate select or both if unsure
   const option = document.createElement('option');
   option.value = modelValue;
   option.textContent = `${modelValue} (Custom)`;
-  
-  if (modelValue.startsWith('gemini-')) {
-    geminiSelect.appendChild(option);
-  } else {
-    modelSelect.appendChild(option);
-  }
+  modelSelect.appendChild(option);
 }
 
 async function loadSettings() {
@@ -54,25 +31,22 @@ async function loadSettings() {
     const settings = await requestFromBackground({ action: 'getSettings' });
     
     if (settings) {
-      const provider = settings.aiProvider || 'openrouter';
-      document.getElementById('aiProvider').value = provider;
-      document.getElementById('apiKey').value = settings.apiKey || '';
-      document.getElementById('geminiApiKey').value = settings.geminiApiKey || '';
+      const apiKeyEl = document.getElementById('apiKey');
+      const modelEl = document.getElementById('model');
+      const autoDetectEl = document.getElementById('autoDetect');
+      const showExplanationsEl = document.getElementById('showExplanations');
+      const stealthModeEl = document.getElementById('stealthMode');
+      const autoHideDelayEl = document.getElementById('autoHideDelay');
+
+      if (apiKeyEl) apiKeyEl.value = settings.apiKey || '';
       
       ensureModelOption(settings.model);
+      if (modelEl) modelEl.value = settings.model || 'google/gemini-2.0-flash-exp:free';
       
-      if (provider === 'gemini') {
-        document.getElementById('gemini-model').value = settings.model || 'gemini-1.5-flash';
-      } else {
-        document.getElementById('model').value = settings.model || 'google/gemma-4-26b-a4b-it:free';
-      }
-      
-      document.getElementById('autoDetect').checked = settings.autoDetect !== false;
-      document.getElementById('showExplanations').checked = settings.showExplanations !== false;
-      document.getElementById('stealthMode').checked = settings.stealthMode !== false;
-      document.getElementById('autoHideDelay').value = (settings.autoHideDelay || 8000) / 1000;
-      
-      toggleProviderUI();
+      if (autoDetectEl) autoDetectEl.checked = settings.autoDetect !== false;
+      if (showExplanationsEl) showExplanationsEl.checked = settings.showExplanations !== false;
+      if (stealthModeEl) stealthModeEl.checked = settings.stealthMode !== false;
+      if (autoHideDelayEl) autoHideDelayEl.value = (settings.autoHideDelay || 8000) / 1000;
     }
   } catch (err) {
     showStatus('Failed to load settings', 'error');
@@ -80,25 +54,25 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  const provider = document.getElementById('aiProvider').value;
+  const apiKeyEl = document.getElementById('apiKey');
+  const modelEl = document.getElementById('model');
+  const autoDetectEl = document.getElementById('autoDetect');
+  const showExplanationsEl = document.getElementById('showExplanations');
+  const stealthModeEl = document.getElementById('stealthMode');
+  const autoHideDelayEl = document.getElementById('autoHideDelay');
+
   const settings = {
-    aiProvider: provider,
-    apiKey: document.getElementById('apiKey').value.trim(),
-    geminiApiKey: document.getElementById('geminiApiKey').value.trim(),
-    model: provider === 'gemini' ? document.getElementById('gemini-model').value : document.getElementById('model').value,
-    autoDetect: document.getElementById('autoDetect').checked,
-    showExplanations: document.getElementById('showExplanations').checked,
-    stealthMode: document.getElementById('stealthMode').checked,
-    autoHideDelay: parseInt(document.getElementById('autoHideDelay').value) * 1000
+    aiProvider: 'openrouter',
+    apiKey: apiKeyEl ? apiKeyEl.value.trim() : '',
+    model: modelEl ? modelEl.value : 'google/gemini-2.0-flash-exp:free',
+    autoDetect: autoDetectEl ? autoDetectEl.checked : true,
+    showExplanations: showExplanationsEl ? showExplanationsEl.checked : true,
+    stealthMode: stealthModeEl ? stealthModeEl.checked : true,
+    autoHideDelay: autoHideDelayEl ? parseInt(autoHideDelayEl.value) * 1000 : 8000
   };
   
-  if (provider === 'openrouter' && !settings.apiKey) {
+  if (!settings.apiKey) {
     showStatus('Please enter an OpenRouter API key', 'error');
-    return;
-  }
-
-  if (provider === 'gemini' && !settings.geminiApiKey) {
-    showStatus('Please enter a Gemini API key', 'error');
     return;
   }
   
@@ -111,13 +85,11 @@ async function saveSettings() {
 }
 
 async function testConnection() {
-  const provider = document.getElementById('aiProvider').value;
-  const apiKey = provider === 'gemini' 
-    ? document.getElementById('geminiApiKey').value.trim()
-    : document.getElementById('apiKey').value.trim();
+  const apiKeyEl = document.getElementById('apiKey');
+  const apiKey = apiKeyEl ? apiKeyEl.value.trim() : '';
   
   if (!apiKey) {
-    showStatus(`Please enter a ${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key first`, 'error');
+    showStatus(`Please enter an OpenRouter API key first`, 'error');
     return;
   }
   
@@ -131,10 +103,12 @@ async function testConnection() {
       questionType: 'multiple_choice'
     });
     
-    if (result.error) {
+    if (result && result.error) {
       showStatus(`Error: ${result.error}`, 'error');
-    } else {
+    } else if (result) {
       showStatus(`Success! Answer: ${result.answer} - ${result.answerText}`, 'success');
+    } else {
+      showStatus('No response from background', 'error');
     }
   } catch (err) {
     showStatus('Connection test failed', 'error');
@@ -151,10 +125,11 @@ function requestFromBackground(message) {
 
 function showStatus(message, type) {
   const statusEl = document.getElementById('statusMessage');
+  if (!statusEl) return;
+  
   statusEl.textContent = message;
   statusEl.className = `status-message status-${type}`;
   
-  // Auto-hide after 5 seconds for success messages
   if (type === 'success') {
     setTimeout(() => {
       statusEl.textContent = '';

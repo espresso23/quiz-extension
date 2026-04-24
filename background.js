@@ -2,10 +2,10 @@
 
 // Default settings
 const DEFAULT_SETTINGS = {
-  aiProvider: 'openrouter', // 'openrouter' or 'gemini'
-  apiKey: '', // OpenRouter API Key
-  geminiApiKey: '', // Google Gemini API Key
-  model: 'google/gemma-4-26b-a4b-it:free', // Default model
+  aiProvider: 'openrouter',
+  apiKey: '',
+  geminiApiKey: '',
+  model: 'google/gemini-2.0-flash-exp:free',
   autoDetect: true,
   showExplanations: true,
   stealthMode: true,
@@ -13,11 +13,14 @@ const DEFAULT_SETTINGS = {
 };
 
 const MODEL_CATALOG = [
-  'google/gemini-2.0-pro-exp-02-05',
-  'google/gemini-2.0-flash',
-  'google/gemini-exp-1206',
-  'google/gemma-4-26b-a4b-it:free',
-  'google/gemma-4-31b-it:free',
+  'google/gemini-2.0-flash-exp:free',
+  'google/gemini-2.0-pro-exp-02-05:free',
+  'deepseek/deepseek-chat',
+  'qwen/qwen-2.5-coder-32b-instruct:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/learnlm-1.5-pro-experimental:free',
+  'anthropic/claude-3.5-sonnet',
+  'openai/gpt-4o',
   'openrouter/auto'
 ];
 
@@ -469,9 +472,17 @@ async function handleParseQuestionFromDOM(snapshot, hintQuestion = '', hintOptio
  * Build AI prompt for the quiz question
  */
 function buildPrompt(question, options, questionType) {
-  let prompt = `You are a quiz assistant. Answer the following question correctly.\n\n`;
-  prompt += `Question Type: ${questionType}\n`;
-  prompt += `Question: ${question}\n\n`;
+  let prompt = `You are a professional quiz assistant and subject matter expert. 
+Your task is to analyze the following question and provide the most accurate answer.
+
+STEP 1: Carefully reason through the question and evaluate each option.
+STEP 2: Identify the correct answer based on standard academic and industry knowledge.
+STEP 3: Format your final response strictly as a single JSON object.
+
+Question Type: ${questionType}
+Question: ${question}
+
+`;
   
   if (options && options.length > 0) {
     prompt += `Options:\n`;
@@ -481,14 +492,20 @@ function buildPrompt(question, options, questionType) {
     prompt += '\n';
   }
   
-  prompt += `Respond in this exact JSON format:
-{
-  "answer": "The letter of the correct answer (A, B, C, D, etc.)",
-  "answerText": "The full text of the correct answer",
-  "explanation": "A clear, concise explanation of why this is the correct answer"
-}
+  prompt += `RESPONSE RULES:
+- Return ONLY valid JSON.
+- DO NOT include markdown code blocks (e.g., \`\`\`json).
+- DO NOT include any introductory or concluding text.
+- For "answer", provide only the letter (A, B, C, etc.).
+- For "answerText", provide the full text of that option.
+- For "explanation", provide a professional explanation.
 
-Do not include any other text. Only return valid JSON.`;
+JSON structure:
+{
+  "answer": "A",
+  "answerText": "Exact text of the correct option",
+  "explanation": "Detailed professional reasoning"
+}`;
   
   return prompt;
 }
@@ -498,31 +515,73 @@ function buildCodingPrompt(payload) {
   const language = normalizeCodingLanguage(payload?.language);
   const starterCode = String(payload?.starterCode || '').trim();
 
-  let prompt = 'You are an expert coding interview assistant.\n';
-  prompt += 'Solve the coding problem and return ONLY valid JSON.\n\n';
-  prompt += `Preferred Language: ${language}\n\n`;
-  prompt += `Problem:\n${question}\n\n`;
+  let prompt = `You are an expert coding interview assistant.
+Solve the following coding problem and return ONLY a valid JSON object.
+
+Preferred Language: ${language}
+
+Problem:
+${question}
+
+`;
 
   if (starterCode) {
-    prompt += `Starter code (if any):\n${starterCode}\n\n`;
+    prompt += `STARTER CODE (THE SOURCE OF TRUTH):
+\`\`\`${language.toLowerCase()}
+${starterCode}
+\`\`\`
+
+`;
+  } else {
+    prompt += `NOTE: The editor is currently EMPTY. Provide a COMPLETE standalone program.
+For JavaScript, use "gets()" or "readLine()" for line-by-line input.
+For Python, use "input()" or "sys.stdin.read()".
+
+`;
   }
 
-  prompt += 'Respond in this exact JSON format:\n';
-  prompt += '{\n';
-  prompt += '  "approach": "short explanation",\n';
-  prompt += '  "timeComplexity": "O(...)" ,\n';
-  prompt += '  "spaceComplexity": "O(...)" ,\n';
-  prompt += '  "logicBlock": "only the statements to place after //write your Logic here (no full class/function wrapper)",\n';
-  prompt += '  "code": "full solution code",\n';
-  prompt += '  "testCases": ["input -> output", "..."],\n';
-  prompt += '  "notes": "important implementation notes"\n';
-  prompt += '}\n\n';
-  prompt += 'Rules:\n';
-  prompt += '- Use only the requested language.\n';
-  prompt += '- Code must compile/run for standard online judge style input-output.\n';
-  prompt += '- logicBlock must be insert-safe and should not contain full class/function wrappers when avoidable.\n';
-  prompt += '- Keep explanation concise and practical.\n';
-  prompt += '- Do not include markdown fences. JSON only.\n';
+  prompt += `CRITICAL RULES FOR "logicBlock":
+1. ABSOLUTELY NO WRAPPERS: Do NOT include function headers, class declarations, or main method wrappers if they already exist in the starter code.
+2. ONLY INNER LOGIC: Provide only the statements that will be inserted into the editor's placeholder.
+
+EXAMPLE (Python):
+Starter: 
+def solve(N, A):
+    # write logic here:
+    return result
+
+Your logicBlock:
+    result = sum(A) // N
+(NOT "def solve(N, A): ...")
+
+EXAMPLE (Java):
+Starter:
+public static int solution(int N, int[] arr) {
+    int result = -404;
+    //write logic here:
+    return result;
+}
+
+Your logicBlock:
+    result = 0;
+    for(int x : arr) result += x;
+(NOT "public static int solution(...) { ... }")
+
+RESPONSE RULES:
+- Return ONLY valid JSON.
+- DO NOT include markdown code blocks (e.g., \`\`\`json).
+- DO NOT include any introductory or concluding text.
+
+JSON structure:
+{
+  "approach": "short explanation",
+  "timeComplexity": "O(...)",
+  "spaceComplexity": "O(...)",
+  "logicBlock": "the RAW implementation statements ONLY",
+  "code": "full combined compilable solution",
+  "testCases": ["input -> output", "..."],
+  "notes": "important notes"
+}`;
 
   return prompt;
 }
@@ -697,15 +756,15 @@ function normalizePreferredModel(model) {
 /**
  * Call OpenRouter API (supports all models including free Gemini)
  */
-async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemini-2.5-flash', responseParser = parseAIResponse, requestOptions = {}) {
+async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemini-2.0-flash-exp:free', responseParser = parseAIResponse, requestOptions = {}) {
   const fallbackModels = Array.isArray(requestOptions.fallbackModels) && requestOptions.fallbackModels.length > 0
     ? requestOptions.fallbackModels
     : [
-        'google/gemini-2.5-flash',
-        'google/gemini-2.5-pro',
-        'google/gemini-exp-1206',
-        'google/gemma-4-26b-a4b-it:free',
-        'google/gemma-4-31b-it:free'
+        'google/gemini-2.0-flash-exp:free',
+        'google/gemini-2.0-pro-exp-02-05:free',
+        'qwen/qwen-2.5-coder-32b-instruct:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
+        'google/learnlm-1.5-pro-experimental:free'
       ];
 
   const triedModels = new Set();
@@ -835,6 +894,8 @@ function extractResponseContent(data) {
 
 function shouldRetryWithFallback(errorMsg, model) {
   const message = (errorMsg || '').toLowerCase();
+  
+  // Model validity or capability errors
   const invalidModel = message.includes('not a valid model id') ||
     message.includes('invalid model') ||
     message.includes('unknown model') ||
@@ -845,22 +906,30 @@ function shouldRetryWithFallback(errorMsg, model) {
     message.includes('multimodal is not supported') ||
     message.includes('image input is not supported') ||
     message.includes('vision is not supported') ||
-    message.includes('no provider available') ||
-    message.includes('no provider found') ||
-    message.includes('provider has no endpoint') ||
     message.includes('unsupported content type');
 
   if (invalidModel || visionUnsupported) return true;
 
-  if (!model || (!model.includes(':free') && model !== 'openrouter/free' && model !== 'openrouter/auto')) return false;
-
-  return message.includes('rate limit exceeded') ||
-    message.includes('free-models-per-min') ||
-    message.includes('rate limit') ||
+  // Rate limits or provider availability errors - mostly for free models
+  const isFree = !model || model.includes(':free') || model.includes('openrouter/free') || model.includes('openrouter/auto');
+  
+  const availabilityError = message.includes('rate limit') ||
+    message.includes('429') ||
     message.includes('overloaded') ||
     message.includes('provider returned error') ||
     message.includes('temporarily unavailable') ||
-    message.includes('quota');
+    message.includes('no provider available') ||
+    message.includes('no provider found') ||
+    message.includes('provider has no endpoint') ||
+    message.includes('upstream') ||
+    message.includes('timeout') ||
+    message.includes('quota') ||
+    message.includes('insufficient balance') ||
+    message.includes('credit');
+
+  if (isFree && availabilityError) return true;
+
+  return false;
 }
 
 function pickNextFallbackModel(currentModel, fallbackModels, triedModels) {
@@ -876,60 +945,75 @@ function pickNextFallbackModel(currentModel, fallbackModels, triedModels) {
  * Parse AI response into structured format
  */
 function parseAIResponse(content) {
-  const safeContent = typeof content === 'string' ? content : String(content || '');
+  let safeContent = typeof content === 'string' ? content : String(content || '');
+  
+  // Pre-clean: remove markdown fences if AI ignored instructions
+  safeContent = safeContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+
   try {
-    // Try to extract JSON from the response
-    const jsonMatch = safeContent.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+    // Try to extract the first JSON-like structure
+    const startIdx = safeContent.indexOf('{');
+    const endIdx = safeContent.lastIndexOf('}');
+    
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      const jsonStr = safeContent.substring(startIdx, endIdx + 1);
+      const parsed = JSON.parse(jsonStr);
+      
       return {
-        answer: parsed.answer?.toUpperCase() || '',
-        answerText: parsed.answerText || '',
-        explanation: parsed.explanation || ''
+        answer: String(parsed.answer || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5),
+        answerText: String(parsed.answerText || ''),
+        explanation: String(parsed.explanation || '')
       };
     }
-    throw new Error('No JSON found in response');
+    throw new Error('No valid JSON block found');
   } catch (e) {
+    console.warn('[AI Translator] JSON parse failed, trying repair:', e.message);
     const repaired = repairUnstructuredAnswerToJson(safeContent);
     if (repaired) {
       return repaired;
     }
 
-    // Fallback: try to extract answer from text
     return {
       answer: '',
-      answerText: safeContent,
-      explanation: 'Could not parse structured response. Raw AI output shown above.'
+      answerText: 'Could not parse structured response',
+      explanation: safeContent
     };
   }
 }
 
 function parseCodingResponse(content) {
-  const safeContent = typeof content === 'string' ? content : String(content || '');
+  let safeContent = typeof content === 'string' ? content : String(content || '');
+  
+  // Clean markdown fences
+  safeContent = safeContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
 
   try {
-    const jsonMatch = safeContent.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON in coding response');
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    return {
-      mode: 'coding',
-      approach: String(parsed.approach || '').trim(),
-      timeComplexity: String(parsed.timeComplexity || '').trim(),
-      spaceComplexity: String(parsed.spaceComplexity || '').trim(),
-      logicBlock: normalizeLogicBlockFromModel(parsed.logicBlock, parsed.code),
-      code: String(parsed.code || '').trim(),
-      testCases: Array.isArray(parsed.testCases)
-        ? parsed.testCases.map((item) => String(item || '').trim()).filter(Boolean)
-        : [],
-      notes: String(parsed.notes || '').trim()
-    };
+    const startIdx = safeContent.indexOf('{');
+    const endIdx = safeContent.lastIndexOf('}');
+    
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      const jsonStr = safeContent.substring(startIdx, endIdx + 1);
+      const parsed = JSON.parse(jsonStr);
+      
+      return {
+        mode: 'coding',
+        approach: String(parsed.approach || '').trim(),
+        timeComplexity: String(parsed.timeComplexity || '').trim(),
+        spaceComplexity: String(parsed.spaceComplexity || '').trim(),
+        logicBlock: normalizeLogicBlockFromModel(parsed.logicBlock, parsed.code),
+        code: String(parsed.code || '').trim(),
+        testCases: Array.isArray(parsed.testCases) ? parsed.testCases : [],
+        notes: String(parsed.notes || '').trim()
+      };
+    }
+    throw new Error('No JSON block found');
   } catch (error) {
+    console.warn('[AI Translator] Coding JSON parse failed:', error.message);
     return {
       mode: 'coding',
       approach: 'Could not parse structured coding response.',
-      timeComplexity: '',
-      spaceComplexity: '',
+      timeComplexity: 'N/A',
+      spaceComplexity: 'N/A',
       logicBlock: '',
       code: safeContent,
       testCases: [],
@@ -939,18 +1023,32 @@ function parseCodingResponse(content) {
 }
 
 function normalizeLogicBlockFromModel(logicBlock, code) {
-  const normalizedLogic = stripCodeFences(String(logicBlock || '').trim());
-  if (normalizedLogic) return normalizedLogic;
+  let normalized = stripCodeFences(String(logicBlock || '').trim());
+  
+  if (!normalized) {
+    normalized = stripCodeFences(String(code || '').trim());
+  }
+  
+  if (!normalized) return '';
 
-  const normalizedCode = stripCodeFences(String(code || '').trim());
-  if (!normalizedCode) return '';
+  // Heuristic to remove function/class wrappers if AI included them by mistake
+  const lines = normalized.split('\n');
+  if (lines.length > 2) {
+    const firstLine = lines[0].trim();
+    const lastLine = lines[lines.length - 1].trim();
 
-  // Avoid inserting full wrappers into template by default.
-  if (/\bclass\s+\w+/.test(normalizedCode) || /\bpublic\s+static\s+void\s+main\b/.test(normalizedCode)) {
-    return '';
+    // Remove Python def/class wrapper
+    if (firstLine.startsWith('def ') && firstLine.endsWith(':') && lastLine === '') {
+       return lines.slice(1).map(l => l.replace(/^    /, '')).join('\n').trim();
+    }
+
+    // Remove Java/JS function wrapper
+    if ((firstLine.includes('function ') || firstLine.includes('class ')) && firstLine.endsWith('{') && lastLine === '}') {
+       return lines.slice(1, -1).map(l => l.replace(/^    /, '')).join('\n').trim();
+    }
   }
 
-  return normalizedCode;
+  return normalized;
 }
 
 function stripCodeFences(text) {

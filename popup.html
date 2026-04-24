@@ -36,14 +36,6 @@
       <div class="settings-section">
         <h2>API Configuration</h2>
         
-        <div class="form-group">
-          <label for="aiProvider">AI Provider</label>
-          <select id="aiProvider">
-            <option value="openrouter">OpenRouter (Supports many models)</option>
-            <option value="gemini">Google Gemini (Direct API)</option>
-          </select>
-        </div>
-
         <div id="openrouter-config">
           <div class="form-group">
             <label for="apiKey">OpenRouter API Key</label>
@@ -54,35 +46,18 @@
           <div class="form-group">
             <label for="model">OpenRouter Model</label>
             <select id="model">
-              <option value="google/gemini-3-pro">Gemini 3 Pro (State of the art)</option>
-              <option value="google/gemini-3-flash">Gemini 3 Flash (Fast & Smart)</option>
-              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="google/gemini-exp-1206">Gemini Exp 1206</option>
-              <option value="google/gemma-4-26b-a4b-it:free">Gemma 4 (26B) - Quiz Recommended</option>
-              <option value="google/gemma-4-31b-it:free">Gemma 4 (31B) - Free</option>
+              <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash (Stable)</option>
+              <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash Exp (Free)</option>
+              <option value="google/gemini-2.0-pro-exp-02-05:free">Gemini 2.0 Pro Exp (Free)</option>
+              <option value="deepseek/deepseek-chat">DeepSeek V3 (Coding King)</option>
+              <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Expert)</option>
+              <option value="openai/gpt-4o">GPT-4o (Smartest)</option>
+              <option value="openai/gpt-4o-mini">GPT-4o Mini (Fast)</option>
+              <option value="qwen/qwen-2.5-coder-32b-instruct:free">Qwen 2.5 Coder (Free)</option>
+              <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 (70B) - Free</option>
+              <option value="google/learnlm-1.5-pro-experimental:free">LearnLM 1.5 Pro (Free)</option>
               <option value="openrouter/auto">Auto-Select Best</option>
             </select>
-          </div>
-        </div>
-
-        <div id="gemini-config" style="display: none;">
-          <div class="form-group">
-            <label for="geminiApiKey">Google Gemini API Key</label>
-            <input type="password" id="geminiApiKey" placeholder="Nhập Gemini API key của bạn" autocomplete="off">
-            <p class="hint">Lấy key miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a></p>
-          </div>
-
-          <div class="form-group">
-            <label for="gemini-model">Gemini Model</label>
-            <select id="gemini-model">
-              <option value="gemini-2.0-pro-exp-02-05">Gemini 2.0 Pro Experimental (Feb 5)</option>
-              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stable)</option>
-              <option value="gemini-2.0-flash-lite-preview-02-05">Gemini 2.0 Flash-Lite</option>
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            </select>
-            <p class="hint">Sử dụng ID chuẩn từ Google AI Studio.</p>
           </div>
         </div>
       </div>

@@ -26,27 +26,37 @@ const Stealth = (function() {
   function createElement(tag, options = {}) {
     const element = document.createElement(tag);
     if (options.classes) element.className = options.classes.join(' ');
-    if (options.styles) Object.assign(element.style, options.styles);
+    if (options.styles && element.style) Object.assign(element.style, options.styles);
     return element;
   }
 
   function createShadowContainer(parent) {
+    if (!parent) return { container: null, shadow: null };
     const container = document.createElement('div');
     container.setAttribute('data-react-component', 'QuizContainer');
-    // Keep host mounted and visible so children in shadow DOM can render.
-    container.style.position = 'fixed';
-    container.style.top = '0';
-    container.style.left = '0';
-    container.style.width = '100vw';
-    container.style.height = '100vh';
-    container.style.overflow = 'visible';
-    container.style.zIndex = '2147483646';
-    container.style.pointerEvents = 'none';
-    container.style.visibility = 'visible';
-    container.style.background = 'transparent';
-    parent.appendChild(container);
-    const shadow = container.attachShadow({ mode: 'closed' });
-    return { container, shadow };
+    
+    if (container.style) {
+      // Keep host mounted and visible so children in shadow DOM can render.
+      container.style.position = 'fixed';
+      container.style.top = '0';
+      container.style.left = '0';
+      container.style.width = '100vw';
+      container.style.height = '100vh';
+      container.style.overflow = 'visible';
+      container.style.zIndex = '2147483646';
+      container.style.pointerEvents = 'none';
+      container.style.visibility = 'visible';
+      container.style.background = 'transparent';
+    }
+    
+    try {
+      parent.appendChild(container);
+      const shadow = container.attachShadow({ mode: 'closed' });
+      return { container, shadow };
+    } catch (e) {
+      console.warn('[AI Translator] Failed to create shadow container:', e);
+      return { container: null, shadow: null };
+    }
   }
 
   function isFocusModeActive() {
@@ -64,6 +74,7 @@ const Stealth = (function() {
   }
 
   function stealthHide(element) {
+    if (!element || !element.style) return;
     element.style.visibility = 'hidden';
     element.style.position = 'absolute';
     element.style.pointerEvents = 'none';
@@ -71,6 +82,7 @@ const Stealth = (function() {
   }
 
   function stealthShow(element) {
+    if (!element || !element.style) return;
     element.style.visibility = 'visible';
     element.style.position = 'fixed';
     element.style.pointerEvents = 'auto';
@@ -144,6 +156,7 @@ const Stealth = (function() {
   const akajobBackgroundSolved = new Set();
   const akajobBackgroundPayloads = new Map();
   const akajobPendingInsertRequests = new Map();
+  const akajobPendingReadRequests = new Map();
   let akajobMessageListenerAttached = false;
   const sessionCachedFingerprints = new Set();
   const questionHintCache = new Map();
@@ -153,13 +166,16 @@ const Stealth = (function() {
   let latestCodingLogicBlock = '';
   let latestCodingFullCode = '';
   const OPENROUTER_MODELS = [
-    { value: 'google/gemini-3-pro', label: 'Gemini 3 Pro (State of the art)' },
-    { value: 'google/gemini-3-flash', label: 'Gemini 3 Flash (Fast & Smart)' },
-    { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'google/gemini-exp-1206', label: 'Gemini Exp 1206' },
-    { value: 'google/gemma-4-26b-a4b-it:free', label: 'Gemma 4 (26B) - Quiz Recommended' },
-    { value: 'google/gemma-4-31b-it:free', label: 'Gemma 4 (31B) - Free' },
+    { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash (Stable)' },
+    { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash Exp (Free)' },
+    { value: 'google/gemini-2.0-pro-exp-02-05:free', label: 'Gemini 2.0 Pro Exp (Free)' },
+    { value: 'deepseek/deepseek-chat', label: 'DeepSeek V3 (Coding King)' },
+    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Expert)' },
+    { value: 'openai/gpt-4o', label: 'GPT-4o (Smartest)' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (Fast)' },
+    { value: 'qwen/qwen-2.5-coder-32b-instruct:free', label: 'Qwen 2.5 Coder (Free)' },
+    { value: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 (70B) - Free' },
+    { value: 'google/learnlm-1.5-pro-experimental:free', label: 'LearnLM 1.5 Pro (Free)' },
     { value: 'openrouter/auto', label: 'Auto-Select Best' }
   ];
   const GEMINI_MODELS = [
@@ -245,10 +261,14 @@ const Stealth = (function() {
     shadowRoot = shadow;
 
     // Create sidebar panel only - NO visible button
-    createHiddenSidebar(shadowRoot);
+    if (shadowRoot) {
+      createHiddenSidebar(shadowRoot);
+    }
 
     // Mark as injected (for internal tracking only)
-    container.setAttribute('data-ai-quiz-injected', 'true');
+    if (container) {
+      container.setAttribute('data-ai-quiz-injected', 'true');
+    }
   }
 
   /**
@@ -289,14 +309,6 @@ const Stealth = (function() {
             <span id="sidebar-settings-chevron">+</span>
           </button>
           <div class="${Stealth.randomClassName()}" id="sidebar-settings-panel" style="display: none; padding: 0 12px 12px 12px;">
-            <div style="margin-bottom: 8px;">
-              <label for="sidebar-ai-provider" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">AI Provider</label>
-              <select id="sidebar-ai-provider" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;">
-                <option value="openrouter">OpenRouter (Supports many models)</option>
-                <option value="gemini">Google Gemini (Direct API)</option>
-              </select>
-            </div>
-
             <div id="sidebar-openrouter-config" style="display: block;">
               <div style="margin-bottom: 8px;">
                 <label for="sidebar-api-key" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">OpenRouter API Key</label>
@@ -308,16 +320,7 @@ const Stealth = (function() {
               </div>
             </div>
 
-            <div id="sidebar-gemini-config" style="display: none;">
-              <div style="margin-bottom: 8px;">
-                <label for="sidebar-gemini-api-key" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Gemini API Key</label>
-                <input type="password" id="sidebar-gemini-api-key" placeholder="Enter Gemini API key" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
-              </div>
-              <div style="margin-bottom: 8px;">
-                <label for="sidebar-gemini-model" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Gemini Model</label>
-                <select id="sidebar-gemini-model" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;"></select>
-              </div>
-            </div>
+            <div id="sidebar-gemini-config" style="display: none;"></div>
 
             <div style="display: grid; grid-template-columns: 1fr; gap: 6px; margin: 8px 0;">
               <label style="font-size: 12px; color: #44546a; display: flex; gap: 6px; align-items: center; cursor: pointer;">
@@ -625,28 +628,18 @@ const Stealth = (function() {
 
   function populateSidebarModelSelects() {
     const openrouterSelect = getSidebarNode('#sidebar-openrouter-model');
-    const geminiSelect = getSidebarNode('#sidebar-gemini-model');
-    if (!openrouterSelect || !geminiSelect) return;
+    if (!openrouterSelect) return;
 
-    const openrouterCurrent = openrouterSelect.value;
-    const geminiCurrent = geminiSelect.value;
+    const currentVal = openrouterSelect.value || settings?.model || '';
 
+    // Clear and refill with full list
     openrouterSelect.innerHTML = OPENROUTER_MODELS
       .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
       .join('');
 
-    geminiSelect.innerHTML = GEMINI_MODELS
-      .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
-      .join('');
-
-    if (openrouterCurrent) {
-      ensureSidebarModelOption(openrouterSelect, openrouterCurrent);
-      openrouterSelect.value = openrouterCurrent;
-    }
-
-    if (geminiCurrent) {
-      ensureSidebarModelOption(geminiSelect, geminiCurrent);
-      geminiSelect.value = geminiCurrent;
+    if (currentVal) {
+      ensureSidebarModelOption(openrouterSelect, currentVal);
+      openrouterSelect.value = currentVal;
     }
   }
 
@@ -720,37 +713,21 @@ const Stealth = (function() {
 
     populateSidebarModelSelects();
 
-    const providerSelect = getSidebarNode('#sidebar-ai-provider');
     const apiKeyInput = getSidebarNode('#sidebar-api-key');
-    const geminiApiKeyInput = getSidebarNode('#sidebar-gemini-api-key');
     const openrouterModelSelect = getSidebarNode('#sidebar-openrouter-model');
-    const geminiModelSelect = getSidebarNode('#sidebar-gemini-model');
     const autoDetectInput = getSidebarNode('#sidebar-auto-detect');
     const showExplanationsInput = getSidebarNode('#sidebar-show-explanations');
     const stealthModeInput = getSidebarNode('#sidebar-stealth-mode');
     const autoHideDelayInput = getSidebarNode('#sidebar-auto-hide-delay');
 
-    if (providerSelect) {
-      providerSelect.value = settings.aiProvider || 'openrouter';
-    }
-
     if (apiKeyInput) {
       apiKeyInput.value = settings.apiKey || '';
     }
 
-    if (geminiApiKeyInput) {
-      geminiApiKeyInput.value = settings.geminiApiKey || '';
-    }
-
     const modelValue = String(settings.model || '').trim();
-    if (modelValue) {
-      if (modelValue.startsWith('gemini-')) {
-        ensureSidebarModelOption(geminiModelSelect, modelValue);
-        if (geminiModelSelect) geminiModelSelect.value = modelValue;
-      } else {
-        ensureSidebarModelOption(openrouterModelSelect, modelValue);
-        if (openrouterModelSelect) openrouterModelSelect.value = modelValue;
-      }
+    if (modelValue && openrouterModelSelect) {
+      ensureSidebarModelOption(openrouterModelSelect, modelValue);
+      openrouterModelSelect.value = modelValue;
     }
 
     if (autoDetectInput) {
@@ -773,33 +750,25 @@ const Stealth = (function() {
   }
 
   function getSidebarSettingsFromInputs() {
-    const provider = getSidebarNode('#sidebar-ai-provider')?.value || 'openrouter';
     const apiKey = String(getSidebarNode('#sidebar-api-key')?.value || '').trim();
-    const geminiApiKey = String(getSidebarNode('#sidebar-gemini-api-key')?.value || '').trim();
     const openrouterModel = String(getSidebarNode('#sidebar-openrouter-model')?.value || '').trim();
-    const geminiModel = String(getSidebarNode('#sidebar-gemini-model')?.value || '').trim();
     const autoDetect = !!getSidebarNode('#sidebar-auto-detect')?.checked;
     const showExplanations = !!getSidebarNode('#sidebar-show-explanations')?.checked;
     const stealthMode = !!getSidebarNode('#sidebar-stealth-mode')?.checked;
     const delayInput = parseInt(String(getSidebarNode('#sidebar-auto-hide-delay')?.value || '8'), 10);
     const safeDelay = Number.isFinite(delayInput) ? Math.min(30, Math.max(3, delayInput)) : 8;
-    const model = provider === 'gemini' ? (geminiModel || 'gemini-1.5-flash') : (openrouterModel || 'google/gemma-4-26b-a4b-it:free');
+    const model = openrouterModel || 'google/gemini-2.0-flash-exp:free';
 
-    if (provider === 'openrouter' && !apiKey) {
+    if (!apiKey) {
       return { ok: false, error: 'Please enter an OpenRouter API key' };
-    }
-
-    if (provider === 'gemini' && !geminiApiKey) {
-      return { ok: false, error: 'Please enter a Gemini API key' };
     }
 
     return {
       ok: true,
       settings: {
         ...(settings || {}),
-        aiProvider: provider,
+        aiProvider: 'openrouter',
         apiKey,
-        geminiApiKey,
         model,
         autoDetect,
         showExplanations,
@@ -2958,13 +2927,24 @@ const Stealth = (function() {
     
     try {
       if (currentQuestion.questionType === 'coding') {
+        let starterCode = currentQuestion.starterCode || extractAkaJobStarterCode();
+        
+        // Try bridge for more reliable read on Akajob
+        if (currentQuestion.source === 'akajob_coding') {
+          const bridgeResult = await fetchCodeViaAkaJobBridge();
+          if (bridgeResult.ok && bridgeResult.code) {
+            starterCode = bridgeResult.code;
+            currentQuestion.starterCode = starterCode;
+          }
+        }
+
         const codingResult = await sendRuntimeMessage({
           action: 'solveCodingQuestion',
           model: settings?.model || '',
           payload: {
             question: currentQuestion.question,
             language: currentQuestion.language || getAkaJobCodingLanguage(),
-            starterCode: currentQuestion.starterCode || extractAkaJobStarterCode()
+            starterCode: starterCode
           }
         });
 
@@ -3181,16 +3161,12 @@ const Stealth = (function() {
       return;
     }
 
-    const currentCode = extractAkaJobStarterCode();
-    if (!currentCode) {
-      setCodingInsertStatus('Could not read editor starter code. Click editor once and retry.', true);
-      return;
-    }
-
-    const replacement = replaceLogicRegionInCode(currentCode, logicCheck.logicBlock);
-    if (!replacement.ok) {
-      setCodingInsertStatus(replacement.error || 'Could not find logic placeholder marker.', true);
-      return;
+    let currentCode = '';
+    const currentCodeResult = await fetchCodeViaAkaJobBridge();
+    if (currentCodeResult.ok && currentCodeResult.code) {
+      currentCode = currentCodeResult.code;
+    } else {
+      currentCode = extractAkaJobStarterCode();
     }
 
     if (insertBtn) {
@@ -3199,7 +3175,31 @@ const Stealth = (function() {
     }
 
     try {
-      const writeResult = await applyCodeToAkaJobEditor(replacement.code);
+      let nextCode = '';
+      
+      // If editor is empty, just use the full code from AI
+      if (!currentCode || !currentCode.trim()) {
+        nextCode = latestCodingFullCode || logicBlock;
+      } else {
+        const replacement = replaceLogicRegionInCode(currentCode, logicCheck.logicBlock);
+        if (!replacement.ok) {
+          // If logic placeholder not found, fallback to full code if it looks complete
+          if (latestCodingFullCode && latestCodingFullCode.length > 50) {
+            nextCode = latestCodingFullCode;
+          } else {
+            setCodingInsertStatus(replacement.error || 'Could not find logic placeholder marker.', true);
+            if (insertBtn) {
+              insertBtn.disabled = false;
+              insertBtn.textContent = 'Insert Logic';
+            }
+            return;
+          }
+        } else {
+          nextCode = replacement.code;
+        }
+      }
+
+      const writeResult = await applyCodeToAkaJobEditor(nextCode);
       if (!writeResult.ok) {
         setCodingInsertStatus(writeResult.message || 'Failed to insert logic into editor.', true);
         return;
@@ -3362,7 +3362,7 @@ const Stealth = (function() {
       return bridgeWrite;
     }
 
-    return applyCodeViaTextarea(nextCode);
+    return await applyCodeViaTextarea(nextCode);
   }
 
   function applyCodeViaAkaJobBridge(nextCode) {
@@ -3399,7 +3399,7 @@ const Stealth = (function() {
     });
   }
 
-  function applyCodeViaTextarea(nextCode) {
+  async function applyCodeViaTextarea(nextCode) {
     try {
       const textarea = document.querySelector('#monaco-editor textarea.inputarea, .monaco-editor textarea.inputarea, textarea.inputarea');
       if (!textarea) {
@@ -3414,7 +3414,14 @@ const Stealth = (function() {
       textarea.dispatchEvent(new Event('change', { bubbles: true }));
       textarea.dispatchEvent(new Event('keyup', { bubbles: true }));
 
-      const after = normalizeEditorCodeForCompare(extractAkaJobStarterCode());
+      let after = '';
+      const afterResult = await fetchCodeViaAkaJobBridge();
+      if (afterResult.ok && afterResult.code) {
+        after = normalizeEditorCodeForCompare(afterResult.code);
+      } else {
+        after = normalizeEditorCodeForCompare(extractAkaJobStarterCode());
+      }
+      
       const target = normalizeEditorCodeForCompare(value);
       if (after && target && after === target && after !== before) {
         return { ok: true, message: 'Editor updated via textarea fallback.' };
@@ -3818,9 +3825,59 @@ const Stealth = (function() {
       return;
     }
 
+    if (payload.type === 'getEditorValueResult') {
+      const requestId = String(payload.requestId || '');
+      if (!requestId) return;
+
+      const pending = akajobPendingReadRequests.get(requestId);
+      if (!pending) return;
+
+      clearTimeout(pending.timer);
+      akajobPendingReadRequests.delete(requestId);
+      pending.resolve({
+        ok: payload.ok === true,
+        code: String(payload.code || ''),
+        message: String(payload.message || '')
+      });
+      return;
+    }
+
     if (payload.type !== 'questions') return;
 
     enqueueAkaJobBackgroundQuestions(payload.questions || []);
+  }
+
+  function fetchCodeViaAkaJobBridge() {
+    return new Promise((resolve) => {
+      if (!isAkaJobSkillupPage()) {
+        resolve({ ok: false, message: 'Not on Akajob coding page.' });
+        return;
+      }
+
+      injectAkaJobFetchBridge();
+
+      const requestId = `read-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const timer = setTimeout(() => {
+        const pending = akajobPendingReadRequests.get(requestId);
+        if (pending) {
+          akajobPendingReadRequests.delete(requestId);
+          pending.resolve({ ok: false, message: 'Editor read bridge timed out.' });
+        }
+      }, 1500);
+
+      akajobPendingReadRequests.set(requestId, {
+        resolve,
+        timer
+      });
+
+      window.postMessage({
+        source: 'ai-translator-akajob-bridge-control',
+        payload: {
+          type: 'getEditorValue',
+          requestId
+        }
+      }, '*');
+    });
   }
 
   function enqueueAkaJobBackgroundQuestions(questions) {
