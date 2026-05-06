@@ -796,7 +796,6 @@ async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemini-2.0-flas
     ? requestOptions.fallbackModels
     : [
         'google/gemma-4-26b-a4b-it:free',
-        'google/gemini-2.0-flash-exp:free',
         'openrouter/auto'
       ];
 
