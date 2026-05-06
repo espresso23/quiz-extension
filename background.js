@@ -6,13 +6,18 @@ const DEFAULT_SETTINGS = {
   apiKey: '',
   geminiApiKey: '',
   model: 'google/gemini-2.0-flash-exp:free',
-  autoDetect: true,
+  modelQuiz: 'google/gemini-2.0-flash-exp:free',
+  modelCoding: 'google/gemini-2.0-flash-exp:free',
+  autoDetect: false,
+  followUpPrompt: '',
   showExplanations: true,
   stealthMode: true,
   autoHideDelay: 8000
 };
 
 const MODEL_CATALOG = [
+  'google/gemini-2.5-pro',
+  'google/gemini-2.5-flash',
   'google/gemini-2.0-flash-exp:free',
   'google/gemini-2.0-pro-exp-02-05:free',
   'deepseek/deepseek-chat',
@@ -131,7 +136,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Listen for messages from content script or popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'solveQuiz') {
-    handleQuizQuestion(request.question, request.options, request.questionType, request.model)
+    handleQuizQuestion(request.question, request.options, request.questionType, request.model, request.followUpPrompt)
       .then(sendResponse)
       .catch(err => sendResponse({ error: err.message }));
     return true; // Keep message channel open for async response
@@ -166,7 +171,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'saveSettings') {
-    chrome.storage.sync.set({ settings: request.settings }, () => {
+    const incoming = request.settings || {};
+    const quizModel = normalizePreferredModel(incoming.modelQuiz || incoming.model || DEFAULT_SETTINGS.model);
+    const codingModel = normalizePreferredModel(incoming.modelCoding || incoming.model || DEFAULT_SETTINGS.model);
+    const safeSettings = {
+      ...DEFAULT_SETTINGS,
+      ...incoming,
+      autoDetect: incoming.autoDetect === true,
+      followUpPrompt: normalizeFollowUpPrompt(incoming.followUpPrompt || ''),
+      modelQuiz: quizModel,
+      modelCoding: codingModel,
+      model: quizModel
+    };
+
+    chrome.storage.sync.set({ settings: safeSettings }, () => {
       sendResponse({ success: true });
     });
     return true;
@@ -199,7 +217,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 async function callAI(prompt, responseParser = parseAIResponse, requestOptions = {}) {
   const settings = await getSettings();
   const provider = settings.aiProvider || 'openrouter';
-  const selectedModel = requestOptions.model || normalizePreferredModel(settings.model);
+  const selectedModel = requestOptions.model || normalizePreferredModel(settings.modelQuiz || settings.model);
 
   if (provider === 'gemini') {
     if (!settings.geminiApiKey) {
@@ -336,26 +354,29 @@ async function callGeminiAPI(apiKey, prompt, model, responseParser = parseAIResp
 /**
  * Main function to solve quiz question using AI via OpenRouter
  */
-async function handleQuizQuestion(question, options, questionType = 'multiple_choice', modelOverride = '') {
-  const prompt = buildPrompt(question, options, questionType);
-  const requestOptions = { allowVision: false };
-  if (modelOverride) {
-    requestOptions.model = normalizePreferredModel(modelOverride);
-  }
+async function handleQuizQuestion(question, options, questionType = 'multiple_choice', modelOverride = '', followUpPrompt = '') {
+  const normalizedFollowUpPrompt = normalizeFollowUpPrompt(followUpPrompt);
+  const prompt = buildPrompt(question, options, questionType, normalizedFollowUpPrompt);
+  const settings = await getSettings();
+  const resolvedModel = normalizePreferredModel(modelOverride || settings.modelQuiz || settings.model);
+  const requestOptions = {
+    allowVision: false,
+    model: resolvedModel
+  };
   return callAI(prompt, parseAIResponse, requestOptions);
 }
 
 async function handleCodingQuestion(payload, modelOverride = '') {
-  const prompt = buildCodingPrompt(payload);
+  const followUpPrompt = normalizeFollowUpPrompt(payload?.followUpPrompt || '');
+  const prompt = buildCodingPrompt(payload, followUpPrompt);
+  const settings = await getSettings();
+  const resolvedModel = normalizePreferredModel(modelOverride || settings.modelCoding || settings.model);
   const requestOptions = {
     allowVision: false,
     temperature: 0.2,
-    maxTokens: 1400
+    maxTokens: 1400,
+    model: resolvedModel
   };
-
-  if (modelOverride) {
-    requestOptions.model = normalizePreferredModel(modelOverride);
-  }
 
   return callAI(prompt, parseCodingResponse, requestOptions);
 }
@@ -363,9 +384,10 @@ async function handleCodingQuestion(payload, modelOverride = '') {
 async function handleVisionQuizQuestion(payload, sender, modelOverride = '') {
   const settings = await getSettings();
   const capturedImage = await captureQuizRegionImage(payload, sender);
+  const followUpPrompt = normalizeFollowUpPrompt(payload?.followUpPrompt || '');
   const prompt = payload?.question || 'Analyze this quiz question and provide the correct answer.';
   const provider = settings.aiProvider || 'openrouter';
-  const preferredModel = normalizePreferredModel(modelOverride || settings.model);
+  const preferredModel = normalizePreferredModel(modelOverride || settings.modelQuiz || settings.model);
 
   if (provider === 'openrouter') {
     const visionModel = pickVisionModel(preferredModel);
@@ -471,7 +493,8 @@ async function handleParseQuestionFromDOM(snapshot, hintQuestion = '', hintOptio
 /**
  * Build AI prompt for the quiz question
  */
-function buildPrompt(question, options, questionType) {
+function buildPrompt(question, options, questionType, followUpPrompt = '') {
+  const normalizedFollowUpPrompt = normalizeFollowUpPrompt(followUpPrompt);
   let prompt = `You are a professional quiz assistant and subject matter expert. 
 Your task is to analyze the following question and provide the most accurate answer.
 
@@ -506,11 +529,16 @@ JSON structure:
   "answerText": "Exact text of the correct option",
   "explanation": "Detailed professional reasoning"
 }`;
+
+  if (normalizedFollowUpPrompt) {
+    prompt += `\n\nFOLLOW-UP REQUIREMENT (must obey):\n${normalizedFollowUpPrompt}`;
+  }
   
   return prompt;
 }
 
-function buildCodingPrompt(payload) {
+function buildCodingPrompt(payload, followUpPrompt = '') {
+  const normalizedFollowUpPrompt = normalizeFollowUpPrompt(followUpPrompt);
   const question = String(payload?.question || '').trim();
   const language = normalizeCodingLanguage(payload?.language);
   const starterCode = String(payload?.starterCode || '').trim();
@@ -543,6 +571,7 @@ For Python, use "input()" or "sys.stdin.read()".
   prompt += `CRITICAL RULES FOR "logicBlock":
 1. ABSOLUTELY NO WRAPPERS: Do NOT include function headers, class declarations, or main method wrappers if they already exist in the starter code.
 2. ONLY INNER LOGIC: Provide only the statements that will be inserted into the editor's placeholder.
+3. NEVER REWRITE INPUT/OUTPUT: Do not include code that reads from STDIN or prints to STDOUT (like N=input(), print(result)) if that code is already in the starter template. Focus strictly on solving the problem within the provided function.
 
 EXAMPLE (Python):
 Starter: 
@@ -553,19 +582,8 @@ def solve(N, A):
 Your logicBlock:
     result = sum(A) // N
 (NOT "def solve(N, A): ...")
-
-EXAMPLE (Java):
-Starter:
-public static int solution(int N, int[] arr) {
-    int result = -404;
-    //write logic here:
-    return result;
-}
-
-Your logicBlock:
-    result = 0;
-    for(int x : arr) result += x;
-(NOT "public static int solution(...) { ... }")
+(NOT "A = list(map(int, input().split()))")
+(NOT "print(solve(N, A))")
 
 RESPONSE RULES:
 - Return ONLY valid JSON.
@@ -582,6 +600,10 @@ JSON structure:
   "testCases": ["input -> output", "..."],
   "notes": "important notes"
 }`;
+
+  if (normalizedFollowUpPrompt) {
+    prompt += `\n\nFOLLOW-UP REQUIREMENT (must obey):\n${normalizedFollowUpPrompt}`;
+  }
 
   return prompt;
 }
@@ -635,6 +657,7 @@ function buildDOMParsePrompt(snapshot, hintQuestion, hintOptions) {
 }
 
 function buildVisionMessages(payload, capturedImage = '') {
+  const followUpPrompt = normalizeFollowUpPrompt(payload?.followUpPrompt || '');
   const question = String(payload?.question || '').trim();
   const options = Array.isArray(payload?.options) ? payload.options : [];
   const visualHints = Array.isArray(payload?.visualHints) ? payload.visualHints : [];
@@ -672,6 +695,10 @@ function buildVisionMessages(payload, capturedImage = '') {
   prompt += '  "explanation": "short explanation"\n';
   prompt += '}\n';
 
+  if (followUpPrompt) {
+    prompt += `\nFollow-up requirement (must obey):\n${followUpPrompt}\n`;
+  }
+
   const content = [{ type: 'text', text: prompt }];
 
   if (capturedImage) {
@@ -703,6 +730,12 @@ function buildVisionMessages(payload, capturedImage = '') {
     { role: 'system', content: 'Always return valid JSON only.' },
     { role: 'user', content }
   ];
+}
+
+function normalizeFollowUpPrompt(value) {
+  const prompt = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!prompt) return '';
+  return prompt.slice(0, 600);
 }
 
 function pickVisionModel(preferredModel) {

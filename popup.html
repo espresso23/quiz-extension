@@ -10,7 +10,7 @@
   <div class="popup-container">
     <header class="popup-header">
       <h1>AI Translator</h1>
-      <p class="subtitle">Powered by OpenRouter</p>
+      <p class="subtitle">Choose the best model for each task</p>
     </header>
 
     <main class="popup-content">
@@ -29,13 +29,24 @@
           <p><strong>Keyboard shortcuts:</strong></p>
           <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> Toggle assistant</div>
           <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> Answer selected text</div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> Toggle auto-detect in page</div>
           <div class="shortcut-item"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Q/E</kbd> Legacy fallback</div>
+          <div class="shortcut-item"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> Legacy auto-detect toggle</div>
+          <div class="shortcut-item"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> Regenerate answer</div>
         </div>
       </div>
 
       <div class="settings-section">
         <h2>API Configuration</h2>
-        
+
+        <div class="form-group">
+          <label for="aiProvider">AI Provider</label>
+          <select id="aiProvider">
+            <option value="openrouter">OpenRouter</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </div>
+
         <div id="openrouter-config">
           <div class="form-group">
             <label for="apiKey">OpenRouter API Key</label>
@@ -44,19 +55,75 @@
           </div>
 
           <div class="form-group">
-            <label for="model">OpenRouter Model</label>
-            <select id="model">
+            <label for="modelQuiz">OpenRouter Quiz Model</label>
+            <select id="modelQuiz">
+              <option value="openai/gpt-4o">GPT-4o (Smartest)</option>
+              <option value="openai/gpt-4o-mini">GPT-4o Mini (Fast)</option>
+              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Best)</option>
+              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Fast)</option>
               <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash (Stable)</option>
               <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash Exp (Free)</option>
               <option value="google/gemini-2.0-pro-exp-02-05:free">Gemini 2.0 Pro Exp (Free)</option>
               <option value="deepseek/deepseek-chat">DeepSeek V3 (Coding King)</option>
               <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Expert)</option>
-              <option value="openai/gpt-4o">GPT-4o (Smartest)</option>
-              <option value="openai/gpt-4o-mini">GPT-4o Mini (Fast)</option>
               <option value="qwen/qwen-2.5-coder-32b-instruct:free">Qwen 2.5 Coder (Free)</option>
               <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 (70B) - Free</option>
               <option value="google/learnlm-1.5-pro-experimental:free">LearnLM 1.5 Pro (Free)</option>
               <option value="openrouter/auto">Auto-Select Best</option>
+            </select>
+            <input type="text" id="customModelQuiz" placeholder="Or enter custom quiz model ID" style="width: 100%; margin-top: 8px; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+          </div>
+
+          <div class="form-group">
+            <label for="modelCoding">OpenRouter Coding Model</label>
+            <select id="modelCoding">
+              <option value="openai/gpt-4o">GPT-4o (Smartest)</option>
+              <option value="openai/gpt-4o-mini">GPT-4o Mini (Fast)</option>
+              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Best)</option>
+              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Fast)</option>
+              <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash (Stable)</option>
+              <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash Exp (Free)</option>
+              <option value="google/gemini-2.0-pro-exp-02-05:free">Gemini 2.0 Pro Exp (Free)</option>
+              <option value="deepseek/deepseek-chat">DeepSeek V3 (Coding King)</option>
+              <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Expert)</option>
+              <option value="qwen/qwen-2.5-coder-32b-instruct:free">Qwen 2.5 Coder (Free)</option>
+              <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 (70B) - Free</option>
+              <option value="google/learnlm-1.5-pro-experimental:free">LearnLM 1.5 Pro (Free)</option>
+              <option value="openrouter/auto">Auto-Select Best</option>
+            </select>
+            <input type="text" id="customModelCoding" placeholder="Or enter custom coding model ID" style="width: 100%; margin-top: 8px; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+          </div>
+        </div>
+
+        <div id="gemini-config" style="display: none;">
+          <div class="form-group">
+            <label for="geminiApiKey">Gemini API Key</label>
+            <input type="password" id="geminiApiKey" placeholder="Enter your Gemini API key" autocomplete="off">
+          </div>
+
+          <div class="form-group">
+            <label for="geminiModelQuiz">Gemini Quiz Model</label>
+            <select id="geminiModelQuiz">
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.0-pro-exp-02-05">Gemini 2.0 Pro Experimental (Feb 5)</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stable)</option>
+              <option value="gemini-2.0-flash-lite-preview-02-05">Gemini 2.0 Flash-Lite</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="geminiModelCoding">Gemini Coding Model</label>
+            <select id="geminiModelCoding">
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.0-pro-exp-02-05">Gemini 2.0 Pro Experimental (Feb 5)</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stable)</option>
+              <option value="gemini-2.0-flash-lite-preview-02-05">Gemini 2.0 Flash-Lite</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
             </select>
           </div>
         </div>
@@ -70,7 +137,7 @@
             <input type="checkbox" id="autoDetect">
             Auto-detect quiz and generate hint automatically
           </label>
-          <p class="hint">Smart mode: only solves high-confidence questions, once per question.</p>
+          <p class="hint">Default is OFF to save tokens. You can toggle directly in-page with Ctrl+Shift+A.</p>
         </div>
 
         <div class="form-group checkbox-group">

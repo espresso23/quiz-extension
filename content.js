@@ -160,25 +160,34 @@ const Stealth = (function() {
   let akajobMessageListenerAttached = false;
   const sessionCachedFingerprints = new Set();
   const questionHintCache = new Map();
+  const latestSolvedResults = new Map();
   const processedQuestionFingerprints = new Map();
   const pendingAutoSolveFingerprints = new Set();
   const prefetchInFlight = new Map();
+  let hoverHintTooltipEl = null;
+  const hoverHintBindings = [];
+  const hoverHintMarkers = [];
+  let followUpPromptDraft = '';
   let latestCodingLogicBlock = '';
   let latestCodingFullCode = '';
   const OPENROUTER_MODELS = [
+    { value: 'openai/gpt-4o', label: 'GPT-4o (Smartest)' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (Fast)' },
+    { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (Best)' },
+    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (Fast)' },
     { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash (Stable)' },
     { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash Exp (Free)' },
     { value: 'google/gemini-2.0-pro-exp-02-05:free', label: 'Gemini 2.0 Pro Exp (Free)' },
     { value: 'deepseek/deepseek-chat', label: 'DeepSeek V3 (Coding King)' },
     { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Expert)' },
-    { value: 'openai/gpt-4o', label: 'GPT-4o (Smartest)' },
-    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (Fast)' },
     { value: 'qwen/qwen-2.5-coder-32b-instruct:free', label: 'Qwen 2.5 Coder (Free)' },
     { value: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 (70B) - Free' },
     { value: 'google/learnlm-1.5-pro-experimental:free', label: 'LearnLM 1.5 Pro (Free)' },
     { value: 'openrouter/auto', label: 'Auto-Select Best' }
   ];
   const GEMINI_MODELS = [
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
     { value: 'gemini-2.0-pro-exp-02-05', label: 'Gemini 2.0 Pro Experimental (Feb 5)' },
     { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Stable)' },
     { value: 'gemini-2.0-flash-lite-preview-02-05', label: 'Gemini 2.0 Flash-Lite' },
@@ -200,11 +209,14 @@ const Stealth = (function() {
       aiProvider: savedSettings?.aiProvider || 'openrouter',
       apiKey: savedSettings?.apiKey || '',
       geminiApiKey: savedSettings?.geminiApiKey || '',
-      model: savedSettings?.model || 'google/gemma-4-26b-a4b-it:free',
-      autoDetect: savedSettings?.autoDetect !== false,
+      model: savedSettings?.model || 'google/gemini-2.0-flash-exp:free',
+      modelQuiz: savedSettings?.modelQuiz || savedSettings?.model || 'google/gemini-2.0-flash-exp:free',
+      modelCoding: savedSettings?.modelCoding || savedSettings?.model || 'google/gemini-2.0-flash-exp:free',
+      autoDetect: savedSettings?.autoDetect === true,
       showExplanations: savedSettings?.showExplanations !== false,
       stealthMode: savedSettings?.stealthMode !== false,
-      autoHideDelay: Number.isFinite(savedSettings?.autoHideDelay) ? savedSettings.autoHideDelay : 8000
+      autoHideDelay: Number.isFinite(savedSettings?.autoHideDelay) ? savedSettings.autoHideDelay : 8000,
+      followUpPrompt: normalizeFollowUpPromptText(savedSettings?.followUpPrompt || '')
     };
 
     settings.autoHideDelay = Math.max(3000, settings.autoHideDelay || 8000);
@@ -224,21 +236,8 @@ const Stealth = (function() {
     // Setup focus mode detection
     setupFocusModeDetection();
 
-    // Setup smart auto-detect if enabled
-    setupAutoDetect();
-
-    // Setup quiz progress observer for prefetch within current session
-    setupQuizProgressObserver();
-
-    // Setup Harvard prefetch observer for full in-session preload
-    setupHarvardPrefetchObserver();
-
-    // Setup Harvard async background preload bridge
-    setupHarvardBackgroundPreload();
-
-    // Setup Akajob in-tab prefetch and async background preload
-    setupAkaJobPrefetchObserver();
-    setupAkaJobBackgroundPreload();
+    // Setup/teardown auto-detect + prefetch systems based on in-page toggle.
+    configureAutoDetectState(settings.autoDetect === true, 'init');
     
     // Listen for URL changes (SPA navigation)
     observeURLChanges();
@@ -303,24 +302,54 @@ const Stealth = (function() {
       </div>
       <div class="${Stealth.randomClassName()}" style="flex: 1; padding: 16px; overflow-y: auto;">
         <div class="${Stealth.randomClassName()}" id="sidebar-progress" style="background: #eef3fb; border: 1px solid #d8e3f5; color: #345; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 12px; display: none;"></div>
+        <div class="${Stealth.randomClassName()}" id="sidebar-quick-controls" style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+          <button class="${Stealth.randomClassName()}" id="sidebar-auto-detect-toggle" style="flex: 1; padding: 8px 10px; background: #f2f6fd; color: #2f4f7f; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; cursor: pointer;">Auto-detect: OFF</button>
+          <span style="font-size: 11px; color: #5d6f86; white-space: nowrap;">Ctrl+Shift+A</span>
+        </div>
         <div class="${Stealth.randomClassName()}" id="sidebar-settings-wrap" style="border: 1px solid #d9e2f1; border-radius: 8px; margin-bottom: 12px; background: #f7faff;">
           <button class="${Stealth.randomClassName()}" id="sidebar-settings-toggle" aria-expanded="false" style="width: 100%; text-align: left; border: none; background: transparent; padding: 10px 12px; cursor: pointer; font-size: 13px; color: #2f4f7f; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
             <span>Settings</span>
             <span id="sidebar-settings-chevron">+</span>
           </button>
           <div class="${Stealth.randomClassName()}" id="sidebar-settings-panel" style="display: none; padding: 0 12px 12px 12px;">
+            <div style="margin-bottom: 8px;">
+              <label for="sidebar-ai-provider" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">AI Provider</label>
+              <select id="sidebar-ai-provider" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;">
+                <option value="openrouter">OpenRouter</option>
+                <option value="gemini">Google Gemini</option>
+              </select>
+            </div>
+
             <div id="sidebar-openrouter-config" style="display: block;">
               <div style="margin-bottom: 8px;">
                 <label for="sidebar-api-key" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">OpenRouter API Key</label>
                 <input type="password" id="sidebar-api-key" placeholder="Enter OpenRouter API key" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
               </div>
               <div style="margin-bottom: 8px;">
-                <label for="sidebar-openrouter-model" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">OpenRouter Model</label>
+                <label for="sidebar-openrouter-model" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">OpenRouter Quiz Model</label>
                 <select id="sidebar-openrouter-model" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;"></select>
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-openrouter-model-coding" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">OpenRouter Coding Model</label>
+                <select id="sidebar-openrouter-model-coding" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;"></select>
+                <input type="text" id="sidebar-custom-model" placeholder="Or enter custom model ID" style="width: 100%; padding: 6px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 11px; box-sizing: border-box; margin-top: 4px;">
               </div>
             </div>
 
-            <div id="sidebar-gemini-config" style="display: none;"></div>
+            <div id="sidebar-gemini-config" style="display: none;">
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-gemini-api-key" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Gemini API Key</label>
+                <input type="password" id="sidebar-gemini-api-key" placeholder="Enter Gemini API key" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-gemini-model" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Gemini Quiz Model</label>
+                <select id="sidebar-gemini-model" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;"></select>
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label for="sidebar-gemini-model-coding" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Gemini Coding Model</label>
+                <select id="sidebar-gemini-model-coding" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; background: white;"></select>
+              </div>
+            </div>
 
             <div style="display: grid; grid-template-columns: 1fr; gap: 6px; margin: 8px 0;">
               <label style="font-size: 12px; color: #44546a; display: flex; gap: 6px; align-items: center; cursor: pointer;">
@@ -339,6 +368,12 @@ const Stealth = (function() {
               <input type="number" id="sidebar-auto-hide-delay" min="3" max="30" step="1" value="8" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
             </div>
 
+            <div style="margin-bottom: 10px;">
+              <label for="sidebar-follow-up-prompt" style="font-size: 12px; color: #4d5f7a; display: block; margin-bottom: 4px;">Follow-up prompt (improve answer quality)</label>
+              <textarea id="sidebar-follow-up-prompt" rows="3" placeholder="Ví dụ: ưu tiên chính xác theo Java core; kiểm tra kỹ bẫy đáp án gần giống nhau" style="width: 100%; padding: 8px; border: 1px solid #ccd8ec; border-radius: 6px; font-size: 12px; box-sizing: border-box; resize: vertical;"></textarea>
+              <button class="${Stealth.randomClassName()}" id="sidebar-follow-up-apply" style="margin-top: 6px; width: 100%; padding: 8px; background: #5d6670; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Lưu follow-up prompt</button>
+            </div>
+
             <div style="display: flex; gap: 8px; margin-bottom: 8px;">
               <button class="${Stealth.randomClassName()}" id="sidebar-settings-save" style="flex: 1; padding: 9px; background: #2f80ed; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Save</button>
               <button class="${Stealth.randomClassName()}" id="sidebar-settings-test" style="flex: 1; padding: 9px; background: #4b5563; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Test</button>
@@ -347,11 +382,14 @@ const Stealth = (function() {
           </div>
         </div>
         <div class="${Stealth.randomClassName()}" id="sidebar-question" style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-          <p style="font-size: 13px; color: #666;">Bôi đen câu hỏi và đáp án, sau đó nhấn Ctrl+Shift+E (hoặc Alt+Shift+E) để lấy gợi ý. Ctrl+Shift+Q (hoặc Alt+Shift+Q) để mở/thu gọn sidebar.</p>
+          <p style="font-size: 13px; color: #666;">Bôi đen câu hỏi và đáp án, sau đó nhấn Ctrl+Shift+E (hoặc Alt+Shift+E) để xem câu trả lời. Ctrl+Shift+A để bật/tắt auto-detect ngay trên trang.</p>
         </div>
         <div class="${Stealth.randomClassName()}" id="sidebar-options" style="margin-bottom: 12px;"></div>
         <button class="${Stealth.randomClassName()}" id="sidebar-solve-btn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #356d95, #4d86ad); color: white; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; margin-bottom: 16px;">
-          Get Answer Hint
+          Xem câu trả lời
+        </button>
+        <button class="${Stealth.randomClassName()}" id="sidebar-regenerate-btn" style="width: 100%; padding: 10px; background: #4b5563; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: -8px; margin-bottom: 16px;">
+          Regenerate (gọi lại AI)
         </button>
         <div class="${Stealth.randomClassName()}" id="sidebar-result" style="display: none; margin-bottom: 16px;">
           <div class="${Stealth.randomClassName()}" id="result-answer" style="background: #e7f3ff; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 16px; font-weight: 600; color: #4a90d9;"></div>
@@ -382,6 +420,26 @@ const Stealth = (function() {
       solveBtn.addEventListener('click', solveCurrentQuestion);
     }
 
+    const regenerateBtn = sidebarElement.querySelector('#sidebar-regenerate-btn');
+    if (regenerateBtn) {
+      regenerateBtn.addEventListener('click', () => solveCurrentQuestion(null, { forceRefresh: true }));
+    }
+
+    const quickAutoDetectToggleBtn = sidebarElement.querySelector('#sidebar-auto-detect-toggle');
+    if (quickAutoDetectToggleBtn) {
+      quickAutoDetectToggleBtn.addEventListener('click', () => {
+        const nextAutoDetect = !(settings && settings.autoDetect === true);
+        toggleAutoDetectSetting(nextAutoDetect, true);
+      });
+    }
+
+    const applyFollowUpBtn = sidebarElement.querySelector('#sidebar-follow-up-apply');
+    if (applyFollowUpBtn) {
+      applyFollowUpBtn.addEventListener('click', () => {
+        saveFollowUpPromptFromSidebar();
+      });
+    }
+
     const insertLogicBtn = sidebarElement.querySelector('#insert-logic-btn');
     if (insertLogicBtn) {
       insertLogicBtn.addEventListener('click', handleInsertLogicClick);
@@ -410,9 +468,19 @@ const Stealth = (function() {
       openrouterModelSelect.addEventListener('change', applySidebarProviderModelSelection);
     }
 
+    const openrouterCodingModelSelect = sidebarElement.querySelector('#sidebar-openrouter-model-coding');
+    if (openrouterCodingModelSelect) {
+      openrouterCodingModelSelect.addEventListener('change', applySidebarProviderModelSelection);
+    }
+
     const geminiModelSelect = sidebarElement.querySelector('#sidebar-gemini-model');
     if (geminiModelSelect) {
       geminiModelSelect.addEventListener('change', applySidebarProviderModelSelection);
+    }
+
+    const geminiCodingModelSelect = sidebarElement.querySelector('#sidebar-gemini-model-coding');
+    if (geminiCodingModelSelect) {
+      geminiCodingModelSelect.addEventListener('change', applySidebarProviderModelSelection);
     }
 
     const saveSettingsBtn = sidebarElement.querySelector('#sidebar-settings-save');
@@ -423,6 +491,14 @@ const Stealth = (function() {
     const testSettingsBtn = sidebarElement.querySelector('#sidebar-settings-test');
     if (testSettingsBtn) {
       testSettingsBtn.addEventListener('click', testSidebarConnection);
+    }
+
+    const autoDetectInput = sidebarElement.querySelector('#sidebar-auto-detect');
+    if (autoDetectInput) {
+      autoDetectInput.addEventListener('change', () => {
+        const desired = !!autoDetectInput.checked;
+        toggleAutoDetectSetting(desired, true);
+      });
     }
 
     populateSidebarModelSelects();
@@ -461,18 +537,27 @@ const Stealth = (function() {
     });
   }
 
-  function getActiveModelSignature(sourceSettings = settings) {
+  function getActiveModelSignature(sourceSettings = settings, questionType = '') {
     const provider = sourceSettings?.aiProvider || 'openrouter';
-    const model = String(sourceSettings?.model || '').trim();
-    return `${provider}::${model}`;
+    const quizModel = String(sourceSettings?.modelQuiz || sourceSettings?.model || '').trim();
+    const codingModel = String(sourceSettings?.modelCoding || sourceSettings?.model || '').trim();
+    if (questionType === 'coding') {
+      return `${provider}::coding::${codingModel}`;
+    }
+    if (questionType === 'quiz') {
+      return `${provider}::quiz::${quizModel}`;
+    }
+    return `${provider}::quiz::${quizModel}::coding::${codingModel}`;
   }
 
   function invalidateModelDependentCaches(reason = 'model changed') {
     questionHintCache.clear();
     sessionCachedFingerprints.clear();
+    latestSolvedResults.clear();
     processedQuestionFingerprints.clear();
     pendingAutoSolveFingerprints.clear();
     prefetchInFlight.clear();
+    clearHoverHintBindings();
     harvardSeenQuestionFingerprints.clear();
     harvardBackgroundSolved.clear();
     akajobBackgroundSolved.clear();
@@ -575,6 +660,19 @@ const Stealth = (function() {
         console.log('[AI Translator] Solve shortcut pressed');
         solveCurrentQuestion();
       }
+
+      // Ctrl+Shift+A or Alt+Shift+A - Toggle auto-detect/prefetch
+      if (isAutoDetectShortcut(e)) {
+        e.preventDefault();
+        const nextAutoDetect = !(settings && settings.autoDetect === true);
+        toggleAutoDetectSetting(nextAutoDetect, true);
+      }
+
+      // Alt+Shift+R - Regenerate current answer
+      if (isRegenerateShortcut(e)) {
+        e.preventDefault();
+        solveCurrentQuestion(null, { forceRefresh: true });
+      }
       
       // Esc - Hide all UI instantly
       if (e.key === 'Escape') {
@@ -600,6 +698,12 @@ const Stealth = (function() {
         solveCurrentQuestion();
         sendResponse({ success: true });
       }
+
+      if (request.action === 'toggleAutoDetect') {
+        const nextAutoDetect = !(settings && settings.autoDetect === true);
+        toggleAutoDetectSetting(nextAutoDetect, true);
+        sendResponse({ success: true, autoDetect: nextAutoDetect });
+      }
       
       if (request.action === 'hideAllUI') {
         hideAllUI();
@@ -622,24 +726,63 @@ const Stealth = (function() {
     return (isAltShift || isCtrlShift) && event.code === 'KeyE';
   }
 
+  function isAutoDetectShortcut(event) {
+    if (!event || event.metaKey) return false;
+    const isAltShift = event.altKey && event.shiftKey && !event.ctrlKey;
+    const isCtrlShift = event.ctrlKey && event.shiftKey && !event.altKey;
+    return (isAltShift || isCtrlShift) && event.code === 'KeyA';
+  }
+
+  function isRegenerateShortcut(event) {
+    if (!event || event.metaKey) return false;
+    const isAltShift = event.altKey && event.shiftKey && !event.ctrlKey;
+    return isAltShift && event.code === 'KeyR';
+  }
+
   function getSidebarNode(selector) {
     return sidebarElement?.querySelector(selector) || null;
   }
 
   function populateSidebarModelSelects() {
     const openrouterSelect = getSidebarNode('#sidebar-openrouter-model');
-    if (!openrouterSelect) return;
+    const openrouterCodingSelect = getSidebarNode('#sidebar-openrouter-model-coding');
+    const geminiSelect = getSidebarNode('#sidebar-gemini-model');
+    const geminiCodingSelect = getSidebarNode('#sidebar-gemini-model-coding');
+    if (!openrouterSelect || !openrouterCodingSelect || !geminiSelect || !geminiCodingSelect) return;
 
-    const currentVal = openrouterSelect.value || settings?.model || '';
+    const currentQuiz = openrouterSelect.value || settings?.modelQuiz || settings?.model || '';
+    const currentCoding = openrouterCodingSelect.value || settings?.modelCoding || settings?.model || '';
 
     // Clear and refill with full list
     openrouterSelect.innerHTML = OPENROUTER_MODELS
       .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
       .join('');
+    openrouterCodingSelect.innerHTML = OPENROUTER_MODELS
+      .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
+      .join('');
 
-    if (currentVal) {
-      ensureSidebarModelOption(openrouterSelect, currentVal);
-      openrouterSelect.value = currentVal;
+    geminiSelect.innerHTML = GEMINI_MODELS
+      .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
+      .join('');
+    geminiCodingSelect.innerHTML = GEMINI_MODELS
+      .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
+      .join('');
+
+    if (currentQuiz) {
+      ensureSidebarModelOption(openrouterSelect, currentQuiz);
+      openrouterSelect.value = currentQuiz;
+    }
+    if (currentCoding) {
+      ensureSidebarModelOption(openrouterCodingSelect, currentCoding);
+      openrouterCodingSelect.value = currentCoding;
+    }
+    if (currentQuiz) {
+      ensureSidebarModelOption(geminiSelect, currentQuiz);
+      geminiSelect.value = currentQuiz;
+    }
+    if (currentCoding) {
+      ensureSidebarModelOption(geminiCodingSelect, currentCoding);
+      geminiCodingSelect.value = currentCoding;
     }
   }
 
@@ -689,16 +832,24 @@ const Stealth = (function() {
 
     const provider = getSidebarNode('#sidebar-ai-provider')?.value || settings.aiProvider || 'openrouter';
     const openrouterModel = String(getSidebarNode('#sidebar-openrouter-model')?.value || '').trim();
+    const openrouterCodingModel = String(getSidebarNode('#sidebar-openrouter-model-coding')?.value || '').trim();
     const geminiModel = String(getSidebarNode('#sidebar-gemini-model')?.value || '').trim();
-    const model = provider === 'gemini'
-      ? (geminiModel || settings.model || 'gemini-1.5-flash')
-      : (openrouterModel || settings.model || 'google/gemma-4-26b-a4b-it:free');
+    const geminiCodingModel = String(getSidebarNode('#sidebar-gemini-model-coding')?.value || '').trim();
+    const modelQuiz = provider === 'gemini'
+      ? (geminiModel || settings.modelQuiz || settings.model || 'gemini-2.0-flash')
+      : (openrouterModel || settings.modelQuiz || settings.model || 'google/gemini-2.0-flash-exp:free');
+    const modelCoding = provider === 'gemini'
+      ? (geminiCodingModel || settings.modelCoding || settings.model || 'gemini-2.0-flash')
+      : (openrouterCodingModel || settings.modelCoding || settings.model || 'google/gemini-2.0-flash-exp:free');
+    const model = modelQuiz;
 
     const previousSignature = getActiveModelSignature(settings);
     settings = {
       ...settings,
       aiProvider: provider,
-      model
+      model,
+      modelQuiz,
+      modelCoding
     };
 
     const nextSignature = getActiveModelSignature(settings);
@@ -714,8 +865,16 @@ const Stealth = (function() {
     populateSidebarModelSelects();
 
     const apiKeyInput = getSidebarNode('#sidebar-api-key');
+    const providerSelect = getSidebarNode('#sidebar-ai-provider');
     const openrouterModelSelect = getSidebarNode('#sidebar-openrouter-model');
+    const openrouterCodingModelSelect = getSidebarNode('#sidebar-openrouter-model-coding');
+    const customModelInput = getSidebarNode('#sidebar-custom-model');
+    const geminiKeyInput = getSidebarNode('#sidebar-gemini-api-key');
+    const geminiModelSelect = getSidebarNode('#sidebar-gemini-model');
+    const geminiCodingModelSelect = getSidebarNode('#sidebar-gemini-model-coding');
     const autoDetectInput = getSidebarNode('#sidebar-auto-detect');
+    const quickAutoDetectToggleBtn = getSidebarNode('#sidebar-auto-detect-toggle');
+    const followUpPromptInput = getSidebarNode('#sidebar-follow-up-prompt');
     const showExplanationsInput = getSidebarNode('#sidebar-show-explanations');
     const stealthModeInput = getSidebarNode('#sidebar-stealth-mode');
     const autoHideDelayInput = getSidebarNode('#sidebar-auto-hide-delay');
@@ -724,14 +883,79 @@ const Stealth = (function() {
       apiKeyInput.value = settings.apiKey || '';
     }
 
-    const modelValue = String(settings.model || '').trim();
-    if (modelValue && openrouterModelSelect) {
-      ensureSidebarModelOption(openrouterModelSelect, modelValue);
-      openrouterModelSelect.value = modelValue;
+    if (providerSelect) {
+      providerSelect.value = settings.aiProvider || 'openrouter';
+    }
+
+    if (geminiKeyInput) {
+      geminiKeyInput.value = settings.geminiApiKey || '';
+    }
+
+    const quizModelValue = String(settings.modelQuiz || settings.model || '').trim();
+    const codingModelValue = String(settings.modelCoding || settings.model || '').trim();
+
+    if (quizModelValue && openrouterModelSelect) {
+      const exists = Array.from(openrouterModelSelect.options).some(opt => opt.value === quizModelValue);
+      if (exists) {
+        openrouterModelSelect.value = quizModelValue;
+      } else {
+        ensureSidebarModelOption(openrouterModelSelect, quizModelValue);
+        openrouterModelSelect.value = quizModelValue;
+      }
+    }
+
+    if (codingModelValue && openrouterCodingModelSelect) {
+      const exists = Array.from(openrouterCodingModelSelect.options).some(opt => opt.value === codingModelValue);
+      if (exists) {
+        openrouterCodingModelSelect.value = codingModelValue;
+      } else {
+        ensureSidebarModelOption(openrouterCodingModelSelect, codingModelValue);
+        openrouterCodingModelSelect.value = codingModelValue;
+      }
+    }
+
+    if (quizModelValue && geminiModelSelect) {
+      const exists = Array.from(geminiModelSelect.options).some(opt => opt.value === quizModelValue);
+      if (exists) {
+        geminiModelSelect.value = quizModelValue;
+      } else {
+        ensureSidebarModelOption(geminiModelSelect, quizModelValue);
+        geminiModelSelect.value = quizModelValue;
+      }
+    }
+
+    if (codingModelValue && geminiCodingModelSelect) {
+      const exists = Array.from(geminiCodingModelSelect.options).some(opt => opt.value === codingModelValue);
+      if (exists) {
+        geminiCodingModelSelect.value = codingModelValue;
+      } else {
+        ensureSidebarModelOption(geminiCodingModelSelect, codingModelValue);
+        geminiCodingModelSelect.value = codingModelValue;
+      }
+    }
+
+    if (customModelInput) {
+      customModelInput.value = '';
     }
 
     if (autoDetectInput) {
-      autoDetectInput.checked = settings.autoDetect !== false;
+      autoDetectInput.checked = settings.autoDetect === true;
+    }
+
+    if (quickAutoDetectToggleBtn) {
+      const enabled = settings.autoDetect === true;
+      quickAutoDetectToggleBtn.textContent = `Auto-detect: ${enabled ? 'ON' : 'OFF'}`;
+      quickAutoDetectToggleBtn.style.background = enabled ? '#e8f6ea' : '#f2f6fd';
+      quickAutoDetectToggleBtn.style.borderColor = enabled ? '#b7dfbf' : '#ccd8ec';
+      quickAutoDetectToggleBtn.style.color = enabled ? '#1f7a2d' : '#2f4f7f';
+    }
+
+    if (followUpPromptInput) {
+      const persistedPrompt = normalizeFollowUpPromptText(settings.followUpPrompt || '');
+      if (!followUpPromptDraft) {
+        followUpPromptDraft = persistedPrompt;
+      }
+      followUpPromptInput.value = followUpPromptDraft || persistedPrompt;
     }
 
     if (showExplanationsInput) {
@@ -749,28 +973,66 @@ const Stealth = (function() {
     toggleSidebarProviderUI();
   }
 
+  async function saveFollowUpPromptFromSidebar() {
+    const input = getSidebarNode('#sidebar-follow-up-prompt');
+    if (!input) return;
+
+    const promptValue = normalizeFollowUpPromptText(input.value || '');
+    followUpPromptDraft = promptValue;
+
+    try {
+      await persistRuntimeSettings({ followUpPrompt: promptValue });
+      setSidebarSettingsStatus('Follow-up prompt saved.', 'success');
+    } catch (error) {
+      setSidebarSettingsStatus(formatExtensionErrorMessage(error), 'error');
+    }
+  }
+
   function getSidebarSettingsFromInputs() {
     const apiKey = String(getSidebarNode('#sidebar-api-key')?.value || '').trim();
     const openrouterModel = String(getSidebarNode('#sidebar-openrouter-model')?.value || '').trim();
+    const openrouterCodingModel = String(getSidebarNode('#sidebar-openrouter-model-coding')?.value || '').trim();
+    const customModel = String(getSidebarNode('#sidebar-custom-model')?.value || '').trim();
+    const geminiApiKey = String(getSidebarNode('#sidebar-gemini-api-key')?.value || '').trim();
+    const geminiModel = String(getSidebarNode('#sidebar-gemini-model')?.value || '').trim();
+    const geminiCodingModel = String(getSidebarNode('#sidebar-gemini-model-coding')?.value || '').trim();
+    const provider = String(getSidebarNode('#sidebar-ai-provider')?.value || settings?.aiProvider || 'openrouter');
     const autoDetect = !!getSidebarNode('#sidebar-auto-detect')?.checked;
+    const followUpPrompt = normalizeFollowUpPromptText(getSidebarNode('#sidebar-follow-up-prompt')?.value || '');
     const showExplanations = !!getSidebarNode('#sidebar-show-explanations')?.checked;
     const stealthMode = !!getSidebarNode('#sidebar-stealth-mode')?.checked;
     const delayInput = parseInt(String(getSidebarNode('#sidebar-auto-hide-delay')?.value || '8'), 10);
     const safeDelay = Number.isFinite(delayInput) ? Math.min(30, Math.max(3, delayInput)) : 8;
-    const model = openrouterModel || 'google/gemini-2.0-flash-exp:free';
+    const modelQuiz = provider === 'gemini'
+      ? (geminiModel || settings?.modelQuiz || settings?.model || 'gemini-2.0-flash')
+      : (customModel || openrouterModel || settings?.modelQuiz || settings?.model || 'google/gemini-2.0-flash-exp:free');
+    const modelCoding = provider === 'gemini'
+      ? (geminiCodingModel || settings?.modelCoding || settings?.model || 'gemini-2.0-flash')
+      : (customModel || openrouterCodingModel || settings?.modelCoding || settings?.model || 'google/gemini-2.0-flash-exp:free');
+    const model = modelQuiz;
 
-    if (!apiKey) {
+    if (provider === 'gemini') {
+      if (!geminiApiKey) {
+        return { ok: false, error: 'Please enter a Gemini API key' };
+      }
+    } else if (!apiKey) {
       return { ok: false, error: 'Please enter an OpenRouter API key' };
     }
+
+    followUpPromptDraft = followUpPrompt;
 
     return {
       ok: true,
       settings: {
         ...(settings || {}),
-        aiProvider: 'openrouter',
+        aiProvider: provider || 'openrouter',
         apiKey,
+        geminiApiKey,
         model,
+        modelQuiz,
+        modelCoding,
         autoDetect,
+        followUpPrompt,
         showExplanations,
         stealthMode,
         autoHideDelay: safeDelay * 1000
@@ -835,8 +1097,11 @@ const Stealth = (function() {
       settings = {
         ...settings,
         ...parsed.settings,
+        autoDetect: parsed.settings.autoDetect === true,
+        followUpPrompt: normalizeText(parsed.settings.followUpPrompt || ''),
         autoHideDelay: Math.max(3000, parsed.settings.autoHideDelay || 8000)
       };
+      followUpPromptDraft = normalizeFollowUpPromptText(settings.followUpPrompt || '');
 
       const nextSignature = getActiveModelSignature(settings);
       if (previousSignature !== nextSignature) {
@@ -877,10 +1142,11 @@ const Stealth = (function() {
 
       const result = await sendRuntimeMessage({
         action: 'solveQuiz',
-        model: settings?.model || '',
+        model: settings?.modelQuiz || settings?.model || '',
         question: 'What is 2 + 2?',
         options: ['3', '4', '5', '6'],
-        questionType: 'multiple_choice'
+        questionType: 'multiple_choice',
+        followUpPrompt: normalizeFollowUpPromptText(settings?.followUpPrompt || '')
       });
 
       if (!result) {
@@ -893,7 +1159,7 @@ const Stealth = (function() {
         return;
       }
 
-      const model = (settings && settings.model) ? `Model: ${settings.model}. ` : '';
+      const model = (settings && (settings.modelQuiz || settings.model)) ? `Model: ${settings.modelQuiz || settings.model}. ` : '';
       setSidebarSettingsStatus(`${model}Test successful. Answer: ${result.answer} - ${result.answerText}`, 'success');
     } catch (error) {
       const message = formatExtensionErrorMessage(error);
@@ -938,8 +1204,103 @@ const Stealth = (function() {
     return null;
   }
 
+  function configureAutoDetectState(enabled, reason = 'manual-toggle') {
+    const shouldEnable = !!enabled;
+    const wasEnabled = settings && settings.autoDetect === true;
+    settings.autoDetect = shouldEnable;
+    const needsSetup = !autoDetectObserver && !quizProgressObserver && !harvardPrefetchObserver && !akajobPrefetchObserver;
+
+    if (shouldEnable && (!wasEnabled || needsSetup)) {
+      setupAutoDetect();
+      setupQuizProgressObserver();
+      setupHarvardPrefetchObserver();
+      setupHarvardBackgroundPreload();
+      setupAkaJobPrefetchObserver();
+      setupAkaJobBackgroundPreload();
+      scheduleAutoDetectScan(500);
+      scheduleQuizProgressRefresh(700);
+      scheduleHarvardPrefetch(800);
+      scheduleAkaJobPrefetch(800);
+      console.log('[AI Translator] Auto-detect enabled by', reason);
+    }
+
+    if (!shouldEnable) {
+      stopAutoDetectAndPrefetch('auto-detect disabled');
+    }
+
+    syncSidebarSettingsUIFromState();
+    updateProgressBadge();
+  }
+
+  function stopAutoDetectAndPrefetch(reason = 'manual-stop') {
+    if (autoDetectObserver) {
+      autoDetectObserver.disconnect();
+      autoDetectObserver = null;
+    }
+    clearTimeout(autoDetectTimer);
+
+    if (quizProgressObserver) {
+      quizProgressObserver.disconnect();
+      quizProgressObserver = null;
+    }
+    clearTimeout(quizProgressTimer);
+
+    if (harvardPrefetchObserver) {
+      harvardPrefetchObserver.disconnect();
+      harvardPrefetchObserver = null;
+    }
+    clearTimeout(harvardPrefetchTimer);
+    harvardPrefetchRunning = false;
+    harvardBackgroundQueueRunning = false;
+    harvardBackgroundPayloads.clear();
+    harvardBackgroundQueued.clear();
+
+    if (akajobPrefetchObserver) {
+      akajobPrefetchObserver.disconnect();
+      akajobPrefetchObserver = null;
+    }
+    clearTimeout(akajobPrefetchTimer);
+    akajobPrefetchRunning = false;
+    akajobBackgroundQueueRunning = false;
+    akajobBackgroundPayloads.clear();
+    akajobBackgroundQueued.clear();
+
+    pendingAutoSolveFingerprints.clear();
+    prefetchInFlight.clear();
+    hideHoverHintTooltip();
+    console.log('[AI Translator] Auto-detect/prefetch stopped:', reason);
+  }
+
+  async function toggleAutoDetectSetting(enabled, persist = true) {
+    const nextAutoDetect = !!enabled;
+    configureAutoDetectState(nextAutoDetect, 'quick-toggle');
+
+    if (persist) {
+      try {
+        await persistRuntimeSettings({ autoDetect: nextAutoDetect });
+        setSidebarSettingsStatus(`Auto-detect ${nextAutoDetect ? 'ON' : 'OFF'} (saved).`, 'success');
+      } catch (error) {
+        setSidebarSettingsStatus(formatExtensionErrorMessage(error), 'error');
+      }
+    }
+  }
+
+  async function persistRuntimeSettings(partialSettings) {
+    const nextSettings = {
+      ...(settings || {}),
+      ...(partialSettings || {})
+    };
+    if (nextSettings.autoDetect !== true) {
+      nextSettings.autoDetect = false;
+    }
+    nextSettings.followUpPrompt = normalizeFollowUpPromptText(nextSettings.followUpPrompt || '');
+    await sendRuntimeMessage({ action: 'saveSettings', settings: nextSettings });
+    settings = nextSettings;
+    return nextSettings;
+  }
+
   function setupAutoDetect() {
-    if (!settings.autoDetect) return;
+    if (settings.autoDetect !== true) return;
     if (!document.body) return;
     if (extensionContextLost) return;
 
@@ -969,7 +1330,7 @@ const Stealth = (function() {
       if (areaName !== 'sync' || !changes.settings) return;
 
       const next = changes.settings.newValue || {};
-      const previousAutoDetect = !!settings.autoDetect;
+      const previousAutoDetect = settings.autoDetect === true;
       const previousSignature = getActiveModelSignature(settings);
 
       settings = {
@@ -979,11 +1340,15 @@ const Stealth = (function() {
         apiKey: next.apiKey !== undefined ? next.apiKey : settings.apiKey,
         geminiApiKey: next.geminiApiKey !== undefined ? next.geminiApiKey : settings.geminiApiKey,
         model: next.model !== undefined ? next.model : settings.model,
-        autoDetect: next.autoDetect !== false,
+        modelQuiz: next.modelQuiz !== undefined ? next.modelQuiz : settings.modelQuiz,
+        modelCoding: next.modelCoding !== undefined ? next.modelCoding : settings.modelCoding,
+        autoDetect: next.autoDetect === true,
         showExplanations: next.showExplanations !== false,
         stealthMode: next.stealthMode !== false,
-        autoHideDelay: Number.isFinite(next.autoHideDelay) ? next.autoHideDelay : (settings.autoHideDelay || 8000)
+        autoHideDelay: Number.isFinite(next.autoHideDelay) ? next.autoHideDelay : (settings.autoHideDelay || 8000),
+        followUpPrompt: normalizeFollowUpPromptText(next.followUpPrompt !== undefined ? next.followUpPrompt : settings.followUpPrompt)
       };
+      followUpPromptDraft = normalizeFollowUpPromptText(settings.followUpPrompt || '');
 
       const nextSignature = getActiveModelSignature(settings);
       if (previousSignature !== nextSignature || (lastModelSignature && nextSignature !== lastModelSignature)) {
@@ -991,20 +1356,8 @@ const Stealth = (function() {
       }
       lastModelSignature = nextSignature;
 
-      if (settings.autoDetect && !previousAutoDetect) {
-        setupAutoDetect();
-      }
-
-      if (!settings.autoDetect && previousAutoDetect) {
-        if (autoDetectObserver) {
-          autoDetectObserver.disconnect();
-          autoDetectObserver = null;
-        }
-        clearTimeout(autoDetectTimer);
-      }
-
-      if (settings.autoDetect) {
-        scheduleAutoDetectScan(500);
+      if (settings.autoDetect !== previousAutoDetect) {
+        configureAutoDetectState(settings.autoDetect, 'storage-sync');
       }
 
       syncSidebarSettingsUIFromState();
@@ -1018,7 +1371,7 @@ const Stealth = (function() {
   }
 
   function scheduleAutoDetectScan(delay = 700) {
-    if (!settings.autoDetect) return;
+    if (settings.autoDetect !== true) return;
 
     clearTimeout(autoDetectTimer);
     autoDetectTimer = setTimeout(() => {
@@ -1027,7 +1380,7 @@ const Stealth = (function() {
   }
 
   function runAutoDetectScan() {
-    if (!settings.autoDetect) return;
+    if (settings.autoDetect !== true) return;
     if (extensionContextLost) return;
 
     const question = detectQuiz();
@@ -1074,6 +1427,12 @@ const Stealth = (function() {
     for (const [fingerprint, entry] of questionHintCache.entries()) {
       if (!entry || entry.timestamp < cutoff) {
         questionHintCache.delete(fingerprint);
+      }
+    }
+
+    for (const [fingerprint, entry] of latestSolvedResults.entries()) {
+      if (!entry || entry.timestamp < cutoff) {
+        latestSolvedResults.delete(fingerprint);
       }
     }
   }
@@ -2037,6 +2396,10 @@ const Stealth = (function() {
     return (text || '').replace(/\s+/g, ' ').trim();
   }
 
+  function normalizeFollowUpPromptText(text) {
+    return normalizeText(text || '').slice(0, 600);
+  }
+
   function isQuestionMetaText(text) {
     return /^question\s+\d+\s+of\s+\d+/i.test(text) ||
       /^up next/i.test(text) ||
@@ -2628,14 +2991,16 @@ const Stealth = (function() {
         if (hardQuestion) currentQuestion.question = hardQuestion;
       }
 
-      if (currentQuestion) {
-        updateAkaJobProgressFromQuestion(currentQuestion);
-        updateHarvardProgressFromQuestion(currentQuestion);
-        updateSidebarWithQuestion(currentQuestion);
-        scheduleQuizProgressRefresh(200);
-        scheduleHarvardPrefetch(300);
-        scheduleAkaJobPrefetch(300);
-      }
+        if (currentQuestion) {
+          updateAkaJobProgressFromQuestion(currentQuestion);
+          updateHarvardProgressFromQuestion(currentQuestion);
+          updateSidebarWithQuestion(currentQuestion);
+          if (settings?.autoDetect === true) {
+            scheduleQuizProgressRefresh(200);
+            scheduleHarvardPrefetch(300);
+            scheduleAkaJobPrefetch(300);
+          }
+        }
       
       scheduleSidebarStealthCycle({ ghostDelay: 1500 });
     } else {
@@ -2655,6 +3020,7 @@ const Stealth = (function() {
     sidebarPointerInside = false;
     sidebarFocusInside = false;
     clearSidebarStealthTimers();
+    hideHoverHintTooltip();
     sidebarElement.style.transform = 'translateX(20px)';
     sidebarElement.style.filter = 'none';
     Stealth.stealthHide(sidebarElement);
@@ -2706,6 +3072,8 @@ const Stealth = (function() {
   function updateSidebarWithQuestion(question) {
     const questionEl = sidebarElement?.querySelector('#sidebar-question');
     const optionsEl = sidebarElement?.querySelector('#sidebar-options');
+
+    clearHoverHintBindings();
     
     if (questionEl && question) {
       questionEl.innerHTML = `<h4 style="font-size: 12px; color: #666; margin-bottom: 6px;">Question:</h4><p style="font-size: 14px; font-weight: 500;">${escapeHtml(question.question)}</p>`;
@@ -2725,6 +3093,11 @@ const Stealth = (function() {
     // Reset result
     const resultEl = sidebarElement?.querySelector('#sidebar-result');
     if (resultEl) resultEl.style.display = 'none';
+
+    const solved = getLatestSolvedResultForQuestion(question);
+    if (solved && !solved.error) {
+      attachHoverHintsForQuestion(question);
+    }
 
     updateProgressBadge();
   }
@@ -2811,6 +3184,8 @@ const Stealth = (function() {
       skipAutoHide: false,
       skipAIFallback: false,
       markFingerprint: '',
+      forceRefresh: false,
+      followUpPrompt: undefined,
       ...solveOptions
     };
 
@@ -2866,20 +3241,32 @@ const Stealth = (function() {
       return { error: 'No question content found' };
     }
 
-    const fingerprint = options.markFingerprint || getQuestionFingerprint(currentQuestion);
-    const modelSignature = getActiveModelSignature();
-    const cachedEntry = fingerprint ? questionHintCache.get(fingerprint) : null;
-    const cacheMatch = !!(cachedEntry && cachedEntry.result && cachedEntry.modelSignature === modelSignature);
-
-    if (cachedEntry && !cacheMatch && fingerprint) {
-      questionHintCache.delete(fingerprint);
-      sessionCachedFingerprints.delete(fingerprint);
+    const followUpPrompt = getFollowUpPromptForSolve(options);
+    if (options.followUpPrompt !== undefined) {
+      followUpPromptDraft = followUpPrompt;
     }
 
-    if (cacheMatch && cachedEntry && cachedEntry.result) {
+    const fingerprint = options.markFingerprint || getQuestionFingerprint(currentQuestion);
+    const cacheKey = buildQuestionCacheKey(fingerprint, followUpPrompt);
+    const questionTypeSignature = currentQuestion?.questionType === 'coding' ? 'coding' : 'quiz';
+    const modelSignature = getActiveModelSignature(settings, questionTypeSignature);
+
+    if (options.forceRefresh && cacheKey) {
+      questionHintCache.delete(cacheKey);
+    }
+
+    const cachedEntry = cacheKey ? questionHintCache.get(cacheKey) : null;
+    const cacheMatch = !!(cachedEntry && cachedEntry.result && cachedEntry.modelSignature === modelSignature);
+
+    if (cachedEntry && !cacheMatch && cacheKey) {
+      questionHintCache.delete(cacheKey);
+    }
+
+    if (!options.forceRefresh && cacheMatch && cachedEntry && cachedEntry.result) {
       if (fingerprint) {
         markFingerprintAsCached(fingerprint);
       }
+      registerSolvedResult(fingerprint, cachedEntry.result, followUpPrompt);
       if (shouldRenderHintInSidebar(options)) {
         if (!sidebarVisible && sidebarElement) {
           showSidebarStealth({ ghostDelay: 1300 });
@@ -2892,6 +3279,7 @@ const Stealth = (function() {
         scheduleSidebarStealthCycle({ ghostDelay: 1200 });
       }
       highlightCorrectOption(cachedEntry.result.answer);
+      attachHoverHintsForQuestion(currentQuestion);
       return cachedEntry.result;
     }
     
@@ -2915,7 +3303,7 @@ const Stealth = (function() {
     });
 
     if ((currentQuestion.questionType === 'multiple_choice' || currentQuestion.questionType === 'multiple_select') && (!currentQuestion.options || currentQuestion.options.length < 2)) {
-      const parseError = 'Cannot detect answer options reliably. Select question + options, or wait for auto-detect to lock onto the current question.';
+      const parseError = 'Cannot detect answer options reliably. Select question + options, then press solve again.';
       if (!options.silent) showError(parseError);
       return { error: parseError };
     }
@@ -2944,7 +3332,8 @@ const Stealth = (function() {
           payload: {
             question: currentQuestion.question,
             language: currentQuestion.language || getAkaJobCodingLanguage(),
-            starterCode: starterCode
+            starterCode: starterCode,
+            followUpPrompt
           }
         });
 
@@ -2959,19 +3348,26 @@ const Stealth = (function() {
           return codingResult;
         }
 
-        if (fingerprint) {
-          questionHintCache.set(fingerprint, {
+        if (cacheKey) {
+          questionHintCache.set(cacheKey, {
             result: codingResult,
             modelSignature,
+            followUpPrompt,
             timestamp: Date.now()
           });
+        }
+
+        if (fingerprint) {
           markFingerprintAsCached(fingerprint);
         }
+        registerSolvedResult(fingerprint, codingResult, followUpPrompt);
 
         if (shouldRenderHintInSidebar(options)) {
           displayResult(codingResult);
           scheduleSidebarStealthCycle({ ghostDelay: 1300 });
         }
+
+        attachHoverHintsForQuestion(currentQuestion);
 
         return codingResult;
       }
@@ -2991,7 +3387,8 @@ const Stealth = (function() {
                 questionType: currentQuestion.questionType,
                 visualHints: Array.isArray(currentQuestion.visualHints) ? currentQuestion.visualHints : [],
                 images: imageSources,
-                captureRect
+                captureRect,
+                followUpPrompt
               }
             }
             : {
@@ -2999,7 +3396,8 @@ const Stealth = (function() {
               model: settings?.model || '',
               question: currentQuestion.question,
               options: currentQuestion.options,
-              questionType: currentQuestion.questionType
+              questionType: currentQuestion.questionType,
+              followUpPrompt
             }
       );
 
@@ -3016,20 +3414,27 @@ const Stealth = (function() {
         return result;
       }
 
-      if (fingerprint) {
-        questionHintCache.set(fingerprint, {
+      if (cacheKey) {
+        questionHintCache.set(cacheKey, {
           result,
           modelSignature,
+          followUpPrompt,
           timestamp: Date.now()
         });
+      }
+
+      if (fingerprint) {
         markFingerprintAsCached(fingerprint);
       }
-      
+      registerSolvedResult(fingerprint, result, followUpPrompt);
+
       if (shouldRenderHintInSidebar(options)) {
         displayResult(result);
         scheduleSidebarStealthCycle({ ghostDelay: 1200 });
       }
+
       highlightCorrectOption(result.answer);
+      attachHoverHintsForQuestion(currentQuestion);
       
       if (!options.skipAutoHide && settings.stealthMode && sidebarVisible) {
         scheduleSidebarStealthCycle({ ghostDelay: 1200 });
@@ -3071,6 +3476,179 @@ const Stealth = (function() {
     };
   }
 
+  function getFollowUpPromptForSolve(options = {}) {
+    if (options && options.followUpPrompt !== undefined) {
+      return normalizeFollowUpPromptText(options.followUpPrompt || '');
+    }
+    return normalizeFollowUpPromptText(settings?.followUpPrompt || followUpPromptDraft || '');
+  }
+
+  function buildQuestionCacheKey(fingerprint, followUpPrompt) {
+    if (!fingerprint) return '';
+    const suffix = normalizeFollowUpPromptText(followUpPrompt || '').toLowerCase();
+    return suffix ? `${fingerprint}::fp-${suffix}` : `${fingerprint}::fp-none`;
+  }
+
+  function hasCachedResultForFingerprint(fingerprint) {
+    if (!fingerprint) return false;
+    if (questionHintCache.has(fingerprint)) return true;
+
+    const prefix = `${fingerprint}::fp-`;
+    for (const key of questionHintCache.keys()) {
+      if (String(key).startsWith(prefix)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function registerSolvedResult(fingerprint, result, followUpPrompt = '') {
+    if (!fingerprint || !result || result.error) return;
+    latestSolvedResults.set(fingerprint, {
+      result,
+      followUpPrompt: normalizeText(followUpPrompt || ''),
+      timestamp: Date.now()
+    });
+  }
+
+  function getLatestSolvedResultForQuestion(question = currentQuestion) {
+    if (!question) return null;
+    const fingerprint = getQuestionFingerprint(question);
+    if (!fingerprint) return null;
+    const entry = latestSolvedResults.get(fingerprint);
+    return entry && entry.result ? entry.result : null;
+  }
+
+  function clearHoverHintBindings() {
+    while (hoverHintBindings.length > 0) {
+      const binding = hoverHintBindings.pop();
+      if (!binding || !binding.el) continue;
+      binding.el.removeEventListener('mouseenter', binding.onEnter, true);
+      binding.el.removeEventListener('mouseleave', binding.onLeave, true);
+    }
+
+    while (hoverHintMarkers.length > 0) {
+      const marker = hoverHintMarkers.pop();
+      if (marker && marker.parentElement) {
+        marker.parentElement.removeChild(marker);
+      }
+    }
+
+    if (hoverHintTooltipEl) {
+      hoverHintTooltipEl.remove();
+      hoverHintTooltipEl = null;
+    }
+  }
+
+  function attachHoverHintsForQuestion(question) {
+    clearHoverHintBindings();
+    if (!question || question.questionType === 'coding') return;
+
+    const solved = getLatestSolvedResultForQuestion(question);
+    if (!solved || !solved.answer) return;
+
+    const answerLetter = String(solved.answer || '').trim().charAt(0).toUpperCase();
+    if (!answerLetter) return;
+
+    const questionTarget = question.questionTextElement || question.element;
+    if (questionTarget) {
+      bindHoverHint(questionTarget, () => {
+        return `${answerLetter}`;
+      });
+    }
+
+    if (Array.isArray(question.optionElements)) {
+      question.optionElements.forEach((optionEl, index) => {
+        if (!optionEl) return;
+        const optionLetterValue = optionLetter(index);
+        if (optionLetterValue === answerLetter) {
+          attachStealthCorrectMarker(optionEl);
+        }
+      });
+    }
+  }
+
+  function attachStealthCorrectMarker(optionEl) {
+    if (!optionEl || typeof optionEl.appendChild !== 'function') return;
+
+    const marker = document.createElement('span');
+    marker.setAttribute('data-ai-quiz-marker', '1');
+    marker.textContent = '•';
+    marker.style.position = 'absolute';
+    marker.style.right = '8px';
+    marker.style.top = '50%';
+    marker.style.transform = 'translateY(-50%)';
+    marker.style.fontSize = '10px';
+    marker.style.color = 'rgba(60, 90, 120, 0.55)';
+    marker.style.pointerEvents = 'none';
+    marker.style.userSelect = 'none';
+    marker.style.opacity = '0.55';
+
+    const currentPos = String(optionEl.style.position || '').toLowerCase();
+    if (!currentPos || currentPos === 'static') {
+      optionEl.style.position = 'relative';
+    }
+
+    optionEl.appendChild(marker);
+    hoverHintMarkers.push(marker);
+  }
+
+  function bindHoverHint(el, textBuilder) {
+    if (!el || typeof textBuilder !== 'function') return;
+
+    const onEnter = () => {
+      const text = normalizeText(textBuilder());
+      if (!text) return;
+      showHoverHintTooltip(text, el);
+    };
+
+    const onLeave = () => {
+      hideHoverHintTooltip();
+    };
+
+    el.addEventListener('mouseenter', onEnter, true);
+    el.addEventListener('mouseleave', onLeave, true);
+    hoverHintBindings.push({ el, onEnter, onLeave });
+  }
+
+  function showHoverHintTooltip(text, anchorEl) {
+    if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return;
+    if (!hoverHintTooltipEl) {
+      hoverHintTooltipEl = document.createElement('div');
+      hoverHintTooltipEl.style.position = 'fixed';
+      hoverHintTooltipEl.style.zIndex = '2147483647';
+      hoverHintTooltipEl.style.pointerEvents = 'none';
+    hoverHintTooltipEl.style.maxWidth = '80px';
+      hoverHintTooltipEl.style.background = 'rgba(20, 36, 56, 0.96)';
+      hoverHintTooltipEl.style.color = '#fff';
+      hoverHintTooltipEl.style.borderRadius = '6px';
+    hoverHintTooltipEl.style.padding = '6px 8px';
+    hoverHintTooltipEl.style.fontSize = '13px';
+    hoverHintTooltipEl.style.fontWeight = '600';
+    hoverHintTooltipEl.style.letterSpacing = '0.5px';
+      hoverHintTooltipEl.style.lineHeight = '1.35';
+      hoverHintTooltipEl.style.boxShadow = '0 6px 18px rgba(0,0,0,0.28)';
+      hoverHintTooltipEl.style.display = 'none';
+      document.documentElement.appendChild(hoverHintTooltipEl);
+    }
+
+    hoverHintTooltipEl.textContent = text;
+    hoverHintTooltipEl.style.display = 'block';
+
+    const rect = anchorEl.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - 340, Math.max(8, rect.left));
+    const y = Math.max(8, rect.top - 36);
+    hoverHintTooltipEl.style.left = `${x}px`;
+    hoverHintTooltipEl.style.top = `${y}px`;
+  }
+
+  function hideHoverHintTooltip() {
+    if (hoverHintTooltipEl) {
+      hoverHintTooltipEl.style.display = 'none';
+    }
+  }
+
   function shouldRenderHintInSidebar(options) {
     if (!options || !options.silent) return true;
     if (!settings || !settings.stealthMode) return true;
@@ -3090,6 +3668,11 @@ const Stealth = (function() {
     const copyBtn = sidebarElement?.querySelector('#copy-logic-btn');
     
     if (!resultEl || !answerEl || !explanationEl) return;
+
+    if (currentQuestion) {
+      const fingerprint = getQuestionFingerprint(currentQuestion);
+      registerSolvedResult(fingerprint, result, getFollowUpPromptForSolve());
+    }
 
     if (insertStatusEl) {
       insertStatusEl.style.display = 'none';
@@ -3176,6 +3759,7 @@ const Stealth = (function() {
 
     try {
       let nextCode = '';
+      let useCursor = false;
       
       // If editor is empty, just use the full code from AI
       if (!currentCode || !currentCode.trim()) {
@@ -3183,29 +3767,21 @@ const Stealth = (function() {
       } else {
         const replacement = replaceLogicRegionInCode(currentCode, logicCheck.logicBlock);
         if (!replacement.ok) {
-          // If logic placeholder not found, fallback to full code if it looks complete
-          if (latestCodingFullCode && latestCodingFullCode.length > 50) {
-            nextCode = latestCodingFullCode;
-          } else {
-            setCodingInsertStatus(replacement.error || 'Could not find logic placeholder marker.', true);
-            if (insertBtn) {
-              insertBtn.disabled = false;
-              insertBtn.textContent = 'Insert Logic';
-            }
-            return;
-          }
+          // Instead of full code fallback, use cursor insertion to preserve template
+          nextCode = logicCheck.logicBlock;
+          useCursor = true;
         } else {
           nextCode = replacement.code;
         }
       }
 
-      const writeResult = await applyCodeToAkaJobEditor(nextCode);
+      const writeResult = await (useCursor ? insertCodeAtCursorViaAkaJobBridge(nextCode) : applyCodeToAkaJobEditor(nextCode));
       if (!writeResult.ok) {
         setCodingInsertStatus(writeResult.message || 'Failed to insert logic into editor.', true);
         return;
       }
 
-      setCodingInsertStatus('Inserted logic into marker region successfully.', false);
+      setCodingInsertStatus(useCursor ? 'Inserted logic at cursor (marker not found).' : 'Inserted logic into marker region successfully.', false);
     } catch (error) {
       setCodingInsertStatus(error?.message || 'Failed to insert logic into editor.', true);
     } finally {
@@ -3357,7 +3933,7 @@ const Stealth = (function() {
   }
 
   async function applyCodeToAkaJobEditor(nextCode) {
-    const bridgeWrite = await applyCodeViaAkaJobBridge(nextCode);
+    const bridgeWrite = await applyCodeViaAkaJobBridge(nextCode, 'insertLogic');
     if (bridgeWrite.ok) {
       return bridgeWrite;
     }
@@ -3365,7 +3941,11 @@ const Stealth = (function() {
     return await applyCodeViaTextarea(nextCode);
   }
 
-  function applyCodeViaAkaJobBridge(nextCode) {
+  async function insertCodeAtCursorViaAkaJobBridge(nextCode) {
+    return await applyCodeViaAkaJobBridge(nextCode, 'insertAtCursor');
+  }
+
+  function applyCodeViaAkaJobBridge(nextCode, type = 'insertLogic') {
     return new Promise((resolve) => {
       if (!isAkaJobSkillupPage()) {
         resolve({ ok: false, message: 'Not on Akajob coding page.' });
@@ -3374,7 +3954,7 @@ const Stealth = (function() {
 
       injectAkaJobFetchBridge();
 
-      const requestId = `insert-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const requestId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const timer = setTimeout(() => {
         const pending = akajobPendingInsertRequests.get(requestId);
         if (pending) {
@@ -3391,7 +3971,7 @@ const Stealth = (function() {
       window.postMessage({
         source: 'ai-translator-akajob-bridge-control',
         payload: {
-          type: 'insertLogic',
+          type: type,
           requestId,
           code: String(nextCode || '')
         }
@@ -3480,9 +4060,11 @@ const Stealth = (function() {
   function showLoading(show) {
     const loadingEl = sidebarElement?.querySelector('#sidebar-loading');
     const solveBtn = sidebarElement?.querySelector('#sidebar-solve-btn');
+    const regenerateBtn = sidebarElement?.querySelector('#sidebar-regenerate-btn');
     
     if (loadingEl) loadingEl.style.display = show ? 'flex' : 'none';
     if (solveBtn) solveBtn.disabled = show;
+    if (regenerateBtn) regenerateBtn.disabled = show;
   }
   
   /**
@@ -3549,29 +4131,7 @@ const Stealth = (function() {
     if (extensionContextNotified) return;
     extensionContextNotified = true;
 
-    clearTimeout(autoDetectTimer);
-    if (autoDetectObserver) {
-      autoDetectObserver.disconnect();
-      autoDetectObserver = null;
-    }
-
-    if (quizProgressObserver) {
-      quizProgressObserver.disconnect();
-      quizProgressObserver = null;
-    }
-
-    if (harvardPrefetchObserver) {
-      harvardPrefetchObserver.disconnect();
-      harvardPrefetchObserver = null;
-    }
-
-    if (akajobPrefetchObserver) {
-      akajobPrefetchObserver.disconnect();
-      akajobPrefetchObserver = null;
-    }
-
-    clearTimeout(harvardPrefetchTimer);
-    clearTimeout(akajobPrefetchTimer);
+    stopAutoDetectAndPrefetch('extension-context-lost');
 
     showError('Extension was updated/reloaded. Refresh this tab once to reconnect.');
   }
@@ -3605,6 +4165,7 @@ const Stealth = (function() {
   }
 
   function setupQuizProgressObserver() {
+    if (settings?.autoDetect !== true) return;
     if (!/linkedin\.com\/learning/i.test(location.href)) return;
     if (!document.body) return;
     if (extensionContextLost) return;
@@ -3629,6 +4190,7 @@ const Stealth = (function() {
   }
 
   function setupHarvardPrefetchObserver() {
+    if (settings?.autoDetect !== true) return;
     if (!isHarvardManageMentorPage()) return;
     if (!document.body) return;
     if (extensionContextLost) return;
@@ -3653,6 +4215,7 @@ const Stealth = (function() {
   }
 
   function setupHarvardBackgroundPreload() {
+    if (settings?.autoDetect !== true) return;
     if (!isHarvardManageMentorPage()) return;
 
     if (!harvardMessageListenerAttached) {
@@ -3664,6 +4227,7 @@ const Stealth = (function() {
   }
 
   function setupAkaJobPrefetchObserver() {
+    if (settings?.autoDetect !== true) return;
     if (!isAkaJobSkillupPage()) return;
     if (!document.body) return;
     if (extensionContextLost) return;
@@ -3688,6 +4252,7 @@ const Stealth = (function() {
   }
 
   function setupAkaJobBackgroundPreload() {
+    if (settings?.autoDetect !== true) return;
     if (!isAkaJobSkillupPage()) return;
 
     if (!akajobMessageListenerAttached) {
@@ -3699,6 +4264,7 @@ const Stealth = (function() {
   }
 
   function scheduleAkaJobPrefetch(delay = 500) {
+    if (settings?.autoDetect !== true) return;
     clearTimeout(akajobPrefetchTimer);
     akajobPrefetchTimer = setTimeout(() => {
       runAkaJobPrefetch();
@@ -3706,6 +4272,7 @@ const Stealth = (function() {
   }
 
   async function runAkaJobPrefetch() {
+    if (settings?.autoDetect !== true) return;
     if (!isAkaJobSkillupPage()) return;
     if (extensionContextLost) return;
     if (!hasValidApiKey()) return;
@@ -3719,7 +4286,7 @@ const Stealth = (function() {
     const fingerprint = getQuestionFingerprint(question);
     if (!fingerprint) return;
 
-    if (questionHintCache.has(fingerprint)) {
+    if (hasCachedResultForFingerprint(fingerprint)) {
       markFingerprintAsCached(fingerprint);
       return;
     }
@@ -3881,6 +4448,7 @@ const Stealth = (function() {
   }
 
   function enqueueAkaJobBackgroundQuestions(questions) {
+    if (settings?.autoDetect !== true) return;
     if (!Array.isArray(questions) || questions.length === 0) return;
     if (!hasValidApiKey()) return;
 
@@ -3903,7 +4471,7 @@ const Stealth = (function() {
 
       const fingerprint = getQuestionFingerprint(payload);
       if (!fingerprint) return;
-      if (akajobBackgroundQueued.has(fingerprint) || questionHintCache.has(fingerprint)) return;
+      if (akajobBackgroundQueued.has(fingerprint) || hasCachedResultForFingerprint(fingerprint)) return;
 
       akajobBackgroundQueued.add(fingerprint);
       akajobBackgroundPayloads.set(fingerprint, payload);
@@ -3915,6 +4483,7 @@ const Stealth = (function() {
   }
 
   async function runAkaJobBackgroundQueue() {
+    if (settings?.autoDetect !== true) return;
     if (akajobBackgroundQueueRunning) return;
     if (extensionContextLost) return;
     if (!hasValidApiKey()) return;
@@ -3923,7 +4492,7 @@ const Stealth = (function() {
     try {
       const payloadEntries = Array.from(akajobBackgroundPayloads.entries());
       for (const [fingerprint, payload] of payloadEntries) {
-        if (questionHintCache.has(fingerprint) || akajobBackgroundSolved.has(fingerprint)) continue;
+        if (hasCachedResultForFingerprint(fingerprint) || akajobBackgroundSolved.has(fingerprint)) continue;
         if (!payload) continue;
 
         const result = await solveCurrentQuestion(payload, {
@@ -3969,6 +4538,7 @@ const Stealth = (function() {
   }
 
   function enqueueHarvardBackgroundQuestions(questions) {
+    if (settings?.autoDetect !== true) return;
     if (!Array.isArray(questions) || questions.length === 0) return;
     if (!hasValidApiKey()) return;
 
@@ -3991,7 +4561,7 @@ const Stealth = (function() {
 
       const fingerprint = getQuestionFingerprint(payload);
       if (!fingerprint) return;
-      if (harvardBackgroundQueued.has(fingerprint) || questionHintCache.has(fingerprint)) return;
+      if (harvardBackgroundQueued.has(fingerprint) || hasCachedResultForFingerprint(fingerprint)) return;
 
       harvardBackgroundQueued.add(fingerprint);
       harvardBackgroundDiscovered += 1;
@@ -4003,6 +4573,7 @@ const Stealth = (function() {
   }
 
   async function runHarvardBackgroundQueue() {
+    if (settings?.autoDetect !== true) return;
     if (harvardBackgroundQueueRunning) return;
     if (extensionContextLost) return;
     if (!hasValidApiKey()) return;
@@ -4012,7 +4583,7 @@ const Stealth = (function() {
       const payloadEntries = Array.from(harvardBackgroundPayloads.entries());
 
       for (const [fingerprint, payload] of payloadEntries) {
-        if (questionHintCache.has(fingerprint) || harvardBackgroundSolved.has(fingerprint)) continue;
+        if (hasCachedResultForFingerprint(fingerprint) || harvardBackgroundSolved.has(fingerprint)) continue;
         if (!payload) continue;
 
         const result = await solveCurrentQuestion(payload, {
@@ -4037,6 +4608,7 @@ const Stealth = (function() {
   }
 
   function scheduleHarvardPrefetch(delay = 600) {
+    if (settings?.autoDetect !== true) return;
     clearTimeout(harvardPrefetchTimer);
     harvardPrefetchTimer = setTimeout(() => {
       runHarvardPrefetch();
@@ -4044,6 +4616,7 @@ const Stealth = (function() {
   }
 
   async function runHarvardPrefetch() {
+    if (settings?.autoDetect !== true) return;
     if (!isHarvardManageMentorPage()) return;
     if (extensionContextLost) return;
     if (!hasValidApiKey()) return;
@@ -4064,7 +4637,7 @@ const Stealth = (function() {
     const fingerprint = getQuestionFingerprint(question);
     if (!fingerprint) return;
 
-    if (questionHintCache.has(fingerprint)) {
+    if (hasCachedResultForFingerprint(fingerprint)) {
       markFingerprintAsCached(fingerprint);
       return;
     }
@@ -4103,6 +4676,7 @@ const Stealth = (function() {
   }
 
   function scheduleQuizProgressRefresh(delay = 500) {
+    if (settings?.autoDetect !== true) return;
     clearTimeout(quizProgressTimer);
     quizProgressTimer = setTimeout(() => {
       refreshQuizProgressAndPrefetch();
@@ -4110,6 +4684,7 @@ const Stealth = (function() {
   }
 
   async function refreshQuizProgressAndPrefetch() {
+    if (settings?.autoDetect !== true) return;
     if (extensionContextLost) return;
 
     if (!/linkedin\.com\/learning/i.test(location.href)) {
@@ -4132,7 +4707,7 @@ const Stealth = (function() {
     if (fingerprint === lastObservedQuestionFingerprint) return;
     lastObservedQuestionFingerprint = fingerprint;
 
-    if (questionHintCache.has(fingerprint)) {
+    if (hasCachedResultForFingerprint(fingerprint)) {
       markFingerprintAsCached(fingerprint);
       return;
     }
@@ -4143,6 +4718,7 @@ const Stealth = (function() {
   }
 
   async function refreshAkaJobProgressAndPrefetch() {
+    if (settings?.autoDetect !== true) return;
     if (extensionContextLost) return;
     if (!isAkaJobSkillupPage()) return;
 
@@ -4161,7 +4737,7 @@ const Stealth = (function() {
     const fingerprint = getQuestionFingerprint(question);
     if (!fingerprint) return;
 
-    if (questionHintCache.has(fingerprint)) {
+    if (hasCachedResultForFingerprint(fingerprint)) {
       markFingerprintAsCached(fingerprint);
       return;
     }
@@ -4202,8 +4778,9 @@ const Stealth = (function() {
   }
 
   async function prefetchQuestionHint(question, fingerprint) {
+    if (settings?.autoDetect !== true) return;
     if (!question || !fingerprint) return;
-    if (questionHintCache.has(fingerprint)) return;
+    if (hasCachedResultForFingerprint(fingerprint)) return;
     if (prefetchInFlight.has(fingerprint)) return;
 
     if (question.source === 'harvard_manage_mentor' && !sidebarVisible) {
@@ -4218,6 +4795,7 @@ const Stealth = (function() {
       allowSelectionOverride: false,
       silent: true,
       skipAutoHide: true,
+      skipAIFallback: true,
       markFingerprint: fingerprint
     }).then((result) => {
       if (result && !result.error) {
@@ -4235,6 +4813,10 @@ const Stealth = (function() {
   function markFingerprintAsCached(fingerprint) {
     if (!fingerprint) return;
     sessionCachedFingerprints.add(fingerprint);
+    const latestResult = latestSolvedResults.get(fingerprint);
+    if (latestResult && latestResult.timestamp && Date.now() - latestResult.timestamp > 30 * 60 * 1000) {
+      latestSolvedResults.delete(fingerprint);
+    }
     if (isAkaJobSkillupPage()) {
       akajobBackgroundSolved.add(fingerprint);
     }
@@ -4281,14 +4863,21 @@ const Stealth = (function() {
           sessionTotalQuestions = 0;
           pendingAutoSolveFingerprints.clear();
           questionHintCache.clear();
+          latestSolvedResults.clear();
+          clearHoverHintBindings();
           processedQuestionFingerprints.clear();
           prefetchInFlight.clear();
           autoSolveCooldownUntil = 0;
-          scheduleAutoDetectScan(900);
-          scheduleQuizProgressRefresh(900);
-          scheduleHarvardPrefetch(900);
-          scheduleAkaJobPrefetch(900);
-          refreshAkaJobProgressAndPrefetch();
+
+          if (settings?.autoDetect === true) {
+            scheduleAutoDetectScan(900);
+            scheduleQuizProgressRefresh(900);
+            scheduleHarvardPrefetch(900);
+            scheduleAkaJobPrefetch(900);
+            refreshAkaJobProgressAndPrefetch();
+          } else {
+            stopAutoDetectAndPrefetch('spa-navigation-auto-detect-off');
+          }
         }, 500);
       }
     }).observe(document, { subtree: true, childList: true });

@@ -212,6 +212,58 @@
     }
   };
 
+  const insertAtCursorInMonacoEditor = (nextCode) => {
+    try {
+      const code = String(nextCode || '');
+      if (!code) return { ok: false, message: 'No code to insert.' };
+
+      const monacoApi = window.monaco;
+      if (monacoApi && monacoApi.editor && typeof monacoApi.editor.getEditors === 'function') {
+        const editors = monacoApi.editor.getEditors();
+        if (Array.isArray(editors) && editors.length > 0) {
+          const editor = editors[0];
+          const model = typeof editor.getModel === 'function' ? editor.getModel() : null;
+          const selection = typeof editor.getSelection === 'function' ? editor.getSelection() : null;
+
+          if (model && selection) {
+            editor.executeEdits("ai-translator", [
+              {
+                range: selection,
+                text: code,
+                forceMoveMarkers: true
+              }
+            ]);
+            if (typeof editor.focus === 'function') editor.focus();
+            return { ok: true, message: 'Inserted at cursor via Monaco API.' };
+          }
+        }
+      }
+
+      // Textarea fallback
+      const textarea = document.querySelector('#monaco-editor textarea.inputarea, .monaco-editor textarea.inputarea, textarea.inputarea');
+      if (textarea) {
+        textarea.focus();
+        if (document.queryCommandSupported('insertText')) {
+          document.execCommand('insertText', false, code);
+          return { ok: true, message: 'Inserted at cursor via execCommand.' };
+        }
+        
+        // Manual range replace
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        textarea.value = text.substring(0, start) + code + text.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + code.length;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        return { ok: true, message: 'Inserted at cursor via manual textarea manipulation.' };
+      }
+
+      return { ok: false, message: 'Editor not found or cursor insertion not supported.' };
+    } catch (error) {
+      return { ok: false, message: error && error.message ? error.message : 'Failed to insert at cursor.' };
+    }
+  };
+
   window.addEventListener('message', function(event) {
     if (!event || event.source !== window) return;
     const data = event.data;
@@ -237,6 +289,18 @@
       const result = setCodeInMonacoEditor(payload.code);
       emit({
         type: 'insertLogicResult',
+        requestId: requestId,
+        ok: result.ok === true,
+        message: result.message || ''
+      });
+      return;
+    }
+
+    if (payload.type === 'insertAtCursor') {
+      const requestId = String(payload.requestId || '');
+      const result = insertAtCursorInMonacoEditor(payload.code);
+      emit({
+        type: 'insertLogicResult', // reuse same result type for simplicity
         requestId: requestId,
         ok: result.ok === true,
         message: result.message || ''

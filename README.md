@@ -17,8 +17,11 @@ AI Translator is a Chrome/Edge extension for quiz assistance on learning platfor
 |---|---|
 | `Ctrl+Shift+Q` | Toggle sidebar |
 | `Ctrl+Shift+E` | Solve current detected question |
+| `Ctrl+Shift+A` | Toggle auto-detect/prefetch on current page |
 | `Alt+Shift+Q` | Legacy toggle fallback |
 | `Alt+Shift+E` | Legacy solve fallback |
+| `Alt+Shift+A` | Legacy auto-detect toggle |
+| `Alt+Shift+R` | Regenerate answer (force refresh) |
 
 ## Installation
 
@@ -40,25 +43,31 @@ If icons are missing:
 
 Open popup settings and configure:
 
+- `AI Provider` (OpenRouter or Gemini)
 - `OpenRouter API Key`
-- `Model` (free, paid, or custom model ID)
+- `Gemini API Key` (if using Gemini provider)
+- `Quiz model` and `Coding model` (free, paid, or custom model ID)
 - `Stealth mode`
-- `Auto-detect`
+- `Auto-detect` (default OFF, can toggle in content sidebar)
+- `Follow-up prompt` (optional, improve answer precision)
 - `Show explanations`
 - `Auto-hide delay`
 <img width="558" height="792" alt="image" src="https://github.com/user-attachments/assets/5649c28e-7b75-496e-b0ad-84204cc48542" />
 
 ## Supported Model Options (Current Popup List)
 
-- `google/gemma-4-26b-a4b-it:free` (quiz recommended)
-- `google/gemma-4-31b-it:free`
-- `openrouter/free`
-- `minimax/minimax-m2.5:free`
-- `nvidia/nemotron-3-nano-30b-a3b:free`
-- `google/gemini-2.5-flash-lite` (paid)
-- `google/gemini-2.5-flash` (paid)
-- `google/gemini-2.5-pro` (paid)
-- `google/gemini-exp-1206` (paid)
+- `openai/gpt-4o`
+- `openai/gpt-4o-mini`
+- `google/gemini-2.5-pro`
+- `google/gemini-2.5-flash`
+- `google/gemini-2.0-flash-001`
+- `google/gemini-2.0-flash-exp:free`
+- `google/gemini-2.0-pro-exp-02-05:free`
+- `deepseek/deepseek-chat`
+- `anthropic/claude-3.5-sonnet`
+- `qwen/qwen-2.5-coder-32b-instruct:free`
+- `meta-llama/llama-3.3-70b-instruct:free`
+- `google/learnlm-1.5-pro-experimental:free`
 - `openrouter/auto`
 
 You can also load a custom model ID from saved settings; popup keeps unknown IDs as a custom option.
@@ -75,8 +84,9 @@ You can also load a custom model ID from saved settings; popup keeps unknown IDs
 ### Prefetch and Caching
 
 - Question fingerprints are used for in-session dedupe and cache lookup.
-- Auto-detect can pre-solve high-confidence questions silently.
+- Auto-detect can pre-solve high-confidence questions silently, but is OFF by default to reduce token usage.
 - Harvard/Akajob async preload uses message bridge events to discover question sets from network JSON responses.
+- When auto-detect is OFF, prefetch/background preload are also paused.
 
 ### CSP-Safe Bridge
 
