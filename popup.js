@@ -67,8 +67,8 @@ async function loadSettings() {
       if (apiKeyEl) apiKeyEl.value = settings.apiKey || '';
       if (geminiApiKeyEl) geminiApiKeyEl.value = settings.geminiApiKey || '';
 
-      const modelQuizValue = settings.modelQuiz || settings.model || 'google/gemini-2.0-flash-exp:free';
-      const modelCodingValue = settings.modelCoding || settings.model || 'google/gemini-2.0-flash-exp:free';
+      const modelQuizValue = settings.modelQuiz || settings.model || 'openai/gpt-5';
+      const modelCodingValue = settings.modelCoding || settings.model || 'google/gemma-4-26b-a4b-it:free';
 
       if (modelQuizEl) {
         const exists = Array.from(modelQuizEl.options).some(opt => opt.value === modelQuizValue);
@@ -214,10 +214,10 @@ function getPopupSettingsFromInputs() {
   const provider = providerEl ? providerEl.value : 'openrouter';
   const modelQuiz = provider === 'gemini'
     ? (geminiModelQuizEl?.value || 'gemini-2.0-flash')
-    : ((customModelQuizEl?.value.trim()) || (modelQuizEl?.value) || 'google/gemini-2.0-flash-exp:free');
+    : ((customModelQuizEl?.value.trim()) || (modelQuizEl?.value) || 'openai/gpt-5');
   const modelCoding = provider === 'gemini'
     ? (geminiModelCodingEl?.value || 'gemini-2.0-flash')
-    : ((customModelCodingEl?.value.trim()) || (modelCodingEl?.value) || 'google/gemini-2.0-flash-exp:free');
+    : ((customModelCodingEl?.value.trim()) || (modelCodingEl?.value) || 'google/gemma-4-26b-a4b-it:free');
 
   const settings = {
     aiProvider: provider,

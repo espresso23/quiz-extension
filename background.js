@@ -5,9 +5,9 @@ const DEFAULT_SETTINGS = {
   aiProvider: 'openrouter',
   apiKey: '',
   geminiApiKey: '',
-  model: 'google/gemini-2.0-flash-exp:free',
-  modelQuiz: 'google/gemini-2.0-flash-exp:free',
-  modelCoding: 'google/gemini-2.0-flash-exp:free',
+  model: 'openai/gpt-5',
+  modelQuiz: 'openai/gpt-5',
+  modelCoding: 'google/gemma-4-26b-a4b-it:free',
   autoDetect: false,
   followUpPrompt: '',
   showExplanations: true,
@@ -16,8 +16,10 @@ const DEFAULT_SETTINGS = {
 };
 
 const MODEL_CATALOG = [
+  'openai/gpt-5',
   'google/gemini-2.5-pro',
   'google/gemini-2.5-flash',
+  'google/gemma-4-26b-a4b-it:free',
   'google/gemini-2.0-flash-exp:free',
   'google/gemini-2.0-pro-exp-02-05:free',
   'deepseek/deepseek-chat',
@@ -793,11 +795,9 @@ async function callOpenRouterAPI(apiKey, prompt, model = 'google/gemini-2.0-flas
   const fallbackModels = Array.isArray(requestOptions.fallbackModels) && requestOptions.fallbackModels.length > 0
     ? requestOptions.fallbackModels
     : [
+        'google/gemma-4-26b-a4b-it:free',
         'google/gemini-2.0-flash-exp:free',
-        'google/gemini-2.0-pro-exp-02-05:free',
-        'qwen/qwen-2.5-coder-32b-instruct:free',
-        'meta-llama/llama-3.3-70b-instruct:free',
-        'google/learnlm-1.5-pro-experimental:free'
+        'openrouter/auto'
       ];
 
   const triedModels = new Set();

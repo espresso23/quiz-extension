@@ -171,8 +171,10 @@ const Stealth = (function() {
   let latestCodingLogicBlock = '';
   let latestCodingFullCode = '';
   const OPENROUTER_MODELS = [
+    { value: 'openai/gpt-5', label: 'GPT-5 (Best)' },
     { value: 'openai/gpt-4o', label: 'GPT-4o (Smartest)' },
     { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (Fast)' },
+    { value: 'google/gemma-4-26b-a4b-it:free', label: 'Gemma 4 26B (Free Best)' },
     { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (Best)' },
     { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (Fast)' },
     { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash (Stable)' },
@@ -209,9 +211,9 @@ const Stealth = (function() {
       aiProvider: savedSettings?.aiProvider || 'openrouter',
       apiKey: savedSettings?.apiKey || '',
       geminiApiKey: savedSettings?.geminiApiKey || '',
-      model: savedSettings?.model || 'google/gemini-2.0-flash-exp:free',
-      modelQuiz: savedSettings?.modelQuiz || savedSettings?.model || 'google/gemini-2.0-flash-exp:free',
-      modelCoding: savedSettings?.modelCoding || savedSettings?.model || 'google/gemini-2.0-flash-exp:free',
+      model: savedSettings?.model || 'openai/gpt-5',
+      modelQuiz: savedSettings?.modelQuiz || savedSettings?.model || 'openai/gpt-5',
+      modelCoding: savedSettings?.modelCoding || savedSettings?.model || 'google/gemma-4-26b-a4b-it:free',
       autoDetect: savedSettings?.autoDetect === true,
       showExplanations: savedSettings?.showExplanations !== false,
       stealthMode: savedSettings?.stealthMode !== false,
@@ -837,10 +839,10 @@ const Stealth = (function() {
     const geminiCodingModel = String(getSidebarNode('#sidebar-gemini-model-coding')?.value || '').trim();
     const modelQuiz = provider === 'gemini'
       ? (geminiModel || settings.modelQuiz || settings.model || 'gemini-2.0-flash')
-      : (openrouterModel || settings.modelQuiz || settings.model || 'google/gemini-2.0-flash-exp:free');
+      : (openrouterModel || settings.modelQuiz || settings.model || 'openai/gpt-5');
     const modelCoding = provider === 'gemini'
       ? (geminiCodingModel || settings.modelCoding || settings.model || 'gemini-2.0-flash')
-      : (openrouterCodingModel || settings.modelCoding || settings.model || 'google/gemini-2.0-flash-exp:free');
+      : (openrouterCodingModel || settings.modelCoding || settings.model || 'google/gemma-4-26b-a4b-it:free');
     const model = modelQuiz;
 
     const previousSignature = getActiveModelSignature(settings);
@@ -1005,10 +1007,10 @@ const Stealth = (function() {
     const safeDelay = Number.isFinite(delayInput) ? Math.min(30, Math.max(3, delayInput)) : 8;
     const modelQuiz = provider === 'gemini'
       ? (geminiModel || settings?.modelQuiz || settings?.model || 'gemini-2.0-flash')
-      : (customModel || openrouterModel || settings?.modelQuiz || settings?.model || 'google/gemini-2.0-flash-exp:free');
+      : (customModel || openrouterModel || settings?.modelQuiz || settings?.model || 'openai/gpt-5');
     const modelCoding = provider === 'gemini'
       ? (geminiCodingModel || settings?.modelCoding || settings?.model || 'gemini-2.0-flash')
-      : (customModel || openrouterCodingModel || settings?.modelCoding || settings?.model || 'google/gemini-2.0-flash-exp:free');
+      : (customModel || openrouterCodingModel || settings?.modelCoding || settings?.model || 'google/gemma-4-26b-a4b-it:free');
     const model = modelQuiz;
 
     if (provider === 'gemini') {
